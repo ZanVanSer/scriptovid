@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
+import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
 import {
   DEFAULT_MAX_SCENE_DURATION_SECONDS,
   DEFAULT_MIN_SCENE_DURATION_SECONDS,
@@ -90,7 +91,8 @@ export default function Home() {
       return;
     }
 
-    const packed = packSentencesIntoScenes(result.sentences, {
+    const timedUnits = toPackableTimedUnits(result.sentences, max, DEFAULT_WORDS_PER_MINUTE);
+    const packed = packSentencesIntoScenes(timedUnits, {
       minSceneDurationSeconds: min,
       maxSceneDurationSeconds: max,
     });
@@ -224,6 +226,7 @@ export default function Home() {
                 <div className={styles.listMeta}>Words: {scene.totalWordCount}</div>
                 <div className={styles.listMeta}>Sentences: {scene.sentenceCount}</div>
                 <div className={styles.listMeta}>Sentence indexes: {scene.sentenceIndexRange}</div>
+                <div className={styles.listMeta}>Unit sources: {scene.unitSourceTypes.join(", ")}</div>
               </li>
             ))}
           </ol>

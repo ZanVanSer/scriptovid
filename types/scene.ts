@@ -1,9 +1,17 @@
-import type { SentenceDebugItem } from "@/types/sentence";
-
 export type ScenePackSettings = {
   minSceneDurationSeconds: number;
   maxSceneDurationSeconds: number;
   maxOvershootSeconds?: number;
+};
+
+export type TimedUnitSourceType = "sentence" | "fallback-fragment";
+
+export type PackableTimedUnit = {
+  sourceSentenceIndex: number;
+  sourceType: TimedUnitSourceType;
+  text: string;
+  wordCount: number;
+  estimatedDurationSeconds: number;
 };
 
 export type PackedScene = {
@@ -14,6 +22,7 @@ export type PackedScene = {
   sentenceCount: number;
   sentenceIndexes: number[];
   sentenceIndexRange: string;
+  unitSourceTypes: TimedUnitSourceType[];
 };
 
 export type ScenePackResult = {
@@ -22,4 +31,4 @@ export type ScenePackResult = {
   totalEstimatedDurationSeconds: number;
 };
 
-export type ScenePackInput = SentenceDebugItem[];
+export type ScenePackInput = PackableTimedUnit[];
