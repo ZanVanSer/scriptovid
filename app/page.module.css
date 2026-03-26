@@ -1,0 +1,150 @@
+.page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+.container {
+  width: min(920px, 100%);
+  max-height: calc(100dvh - 40px);
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid #d6d3d1;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.button,
+.buttonPrimary {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid #d6d3d1;
+  background: #fafaf9;
+  color: #292524;
+  cursor: pointer;
+}
+
+.buttonPrimary {
+  border-color: #44403c;
+  background: #44403c;
+  color: #fafaf9;
+}
+
+.buttonPrimary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.sectionRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.count,
+.listMeta {
+  font-size: 13px;
+  color: #57534e;
+}
+
+.preview {
+  margin: 0;
+  min-height: 110px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fafaf9;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  max-height: 250px;
+  overflow: auto;
+}
+
+.listItem {
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: #fafaf9;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.sentenceText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding: 12px;
+  }
+
+  .container {
+    max-height: calc(100dvh - 24px);
+    gap: 10px;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+}

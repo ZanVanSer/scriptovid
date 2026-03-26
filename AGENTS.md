@@ -1,4 +1,3 @@
-
 # AGENTS.md
 
 ## Project Overview
@@ -24,11 +23,11 @@ This document defines rules for AI coding agents (Codex) working on the project.
 
 The project prioritizes:
 
-• simplicity  
-• clarity  
-• modular phases  
-• local development  
-• testable steps  
+• simplicity
+• clarity
+• modular phases
+• local development
+• testable steps
 
 Avoid unnecessary architecture or infrastructure.
 
@@ -38,13 +37,13 @@ Avoid unnecessary architecture or infrastructure.
 
 Agents MUST NOT introduce:
 
-• background job queues  
-• worker systems  
-• microservices  
-• authentication systems  
-• databases (early phases)  
-• cloud infrastructure  
-• over-engineered state management  
+• background job queues
+• worker systems
+• microservices
+• authentication systems
+• databases (early phases)
+• cloud infrastructure
+• over-engineered state management
 
 The application should run locally using **Next.js + Node.js only**.
 
@@ -52,7 +51,7 @@ The application should run locally using **Next.js + Node.js only**.
 
 # Application Flow
 
-The UI uses a **wizard-style sliding container**.  
+The UI uses a **wizard-style sliding container**.
 Each stage replaces the previous stage without vertical scrolling.
 
 Stages:
@@ -108,10 +107,10 @@ Do not change this structure unless explicitly requested.
 
 When splitting scripts into scenes:
 
-• use sentence boundaries as base units  
-• respect paragraph breaks  
-• merge short sentences if needed  
-• aim for durations within the user-selected range  
+• use sentence boundaries as base units
+• respect paragraph breaks
+• merge short sentences if needed
+• aim for durations within the user-selected range
 
 Do NOT randomly cut text mid-sentence.
 
@@ -123,9 +122,9 @@ Images are generated from scene text.
 
 Rules:
 
-• generate one image per scene  
-• maintain consistent style across scenes  
-• allow regeneration per scene  
+• generate one image per scene
+• maintain consistent style across scenes
+• allow regeneration per scene
 
 Before API integration, use **mock image generation**.
 
@@ -137,8 +136,8 @@ Voice generation occurs **after scene review**.
 
 Rules:
 
-• generate narration from the full script  
-• allow audio preview before rendering video  
+• generate narration from the full script
+• allow audio preview before rendering video
 • allow regeneration if needed
 
 Before API integration, use **mock audio generation**.
@@ -167,11 +166,11 @@ Rules:
 
 Allowed effects:
 
-• slow zoom in  
-• slow zoom out  
-• pan left  
-• pan right  
-• vertical drift  
+• slow zoom in
+• slow zoom out
+• pan left
+• pan right
+• vertical drift
 
 Effects should be randomly selected but **not repeated excessively**.
 
@@ -208,8 +207,8 @@ Avoid:
 
 Early development should support **mock mode**:
 
-Mock image generation  
-Mock voice generation  
+Mock image generation
+Mock voice generation
 Mock rendering
 
 This allows the UI and flow to be tested without external APIs.
