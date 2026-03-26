@@ -1,4 +1,5 @@
 import { textToSentences } from "blingfire";
+import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 
 export function normalizeText(raw: string): string {
   const normalizedLineEndings = raw.replace(/\r\n?/g, "\n").trim();
@@ -38,4 +39,15 @@ export function countWords(sentence: string): number {
   }
 
   return trimmed.split(/\s+/).length;
+}
+
+export function estimateDurationSeconds(
+  wordCount: number,
+  wordsPerMinute = DEFAULT_WORDS_PER_MINUTE,
+): number {
+  if (wordCount <= 0 || wordsPerMinute <= 0) {
+    return 0;
+  }
+
+  return (wordCount / wordsPerMinute) * 60;
 }

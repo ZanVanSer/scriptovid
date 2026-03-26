@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { SAMPLE_SCRIPT } from "@/modules/scene-splitter/sample-script";
 import type { SentenceSplitResponse } from "@/types/sentence";
 
@@ -79,16 +80,27 @@ export default function Home() {
         </section>
 
         <section className={styles.panel}>
-          <h2 className={styles.sectionTitle}>Normalized Text Preview</h2>
-          <pre className={styles.preview}>
-            {result?.normalizedText || "Run split to see normalized text."}
-          </pre>
+          <details className={styles.previewDetails}>
+            <summary className={styles.previewSummary}>Normalized Text Preview</summary>
+            <pre className={styles.preview}>
+              {result?.normalizedText || "Run split to see normalized text."}
+            </pre>
+          </details>
         </section>
 
         <section className={styles.panel}>
           <div className={styles.sectionRow}>
             <h2 className={styles.sectionTitle}>Sentences</h2>
-            <span className={styles.count}>Total: {result?.sentenceCount ?? 0}</span>
+            <span className={styles.count}>Total sentences: {result?.sentenceCount ?? 0}</span>
+          </div>
+          <p className={styles.note}>
+            Duration estimate uses {DEFAULT_WORDS_PER_MINUTE} WPM.
+          </p>
+          <div className={styles.summaryGrid}>
+            <div className={styles.summaryItem}>Total words: {result?.totalWordCount ?? 0}</div>
+            <div className={styles.summaryItem}>
+              Total duration: {(result?.totalEstimatedDurationSeconds ?? 0).toFixed(1)}s
+            </div>
           </div>
 
           <ol className={styles.list}>
@@ -97,6 +109,9 @@ export default function Home() {
                 <div className={styles.listMeta}>#{sentence.index}</div>
                 <p className={styles.sentenceText}>{sentence.text}</p>
                 <div className={styles.listMeta}>Words: {sentence.wordCount}</div>
+                <div className={styles.listMeta}>
+                  Duration: {sentence.estimatedDurationSeconds.toFixed(1)}s
+                </div>
               </li>
             ))}
           </ol>

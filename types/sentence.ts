@@ -2,6 +2,7 @@ export type SentenceDebugItem = {
   index: number;
   text: string;
   wordCount: number;
+  estimatedDurationSeconds: number;
 };
 
 export type SentenceSplitRequest = {
@@ -11,5 +12,7 @@ export type SentenceSplitRequest = {
 export type SentenceSplitResponse = {
   normalizedText: string;
   sentenceCount: number;
+  totalWordCount: number;
+  totalEstimatedDurationSeconds: number;
   sentences: SentenceDebugItem[];
 };

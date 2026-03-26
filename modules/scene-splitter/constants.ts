@@ -1,0 +1,1 @@
+export const DEFAULT_WORDS_PER_MINUTE = 135;
