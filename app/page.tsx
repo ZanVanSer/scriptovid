@@ -226,6 +226,10 @@ export default function Home() {
                 <div className={styles.listMeta}>Words: {scene.totalWordCount}</div>
                 <div className={styles.listMeta}>Sentences: {scene.sentenceCount}</div>
                 <div className={styles.listMeta}>Sentence indexes: {scene.sentenceIndexRange}</div>
+                <div className={styles.listMeta}>Paragraph range: {scene.paragraphIndexRange}</div>
+                <div className={styles.listMeta}>
+                  Crosses paragraph boundary: {scene.crossesParagraphBoundary ? "yes" : "no"}
+                </div>
                 <div className={styles.listMeta}>Unit sources: {scene.unitSourceTypes.join(", ")}</div>
               </li>
             ))}

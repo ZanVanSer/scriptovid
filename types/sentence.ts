@@ -3,6 +3,8 @@ export type SentenceDebugItem = {
   text: string;
   wordCount: number;
   estimatedDurationSeconds: number;
+  paragraphIndex: number;
+  startsNewParagraph: boolean;
 };
 
 export type SentenceSplitRequest = {

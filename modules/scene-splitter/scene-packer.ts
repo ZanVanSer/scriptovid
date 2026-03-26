@@ -4,7 +4,7 @@ export const DEFAULT_MIN_SCENE_DURATION_SECONDS = 6;
 export const DEFAULT_MAX_SCENE_DURATION_SECONDS = 12;
 export const DEFAULT_MAX_OVERSHOOT_SECONDS = 1.5;
 
-function buildSentenceIndexRange(indexes: number[]): string {
+function buildIndexRange(indexes: number[]): string {
   if (indexes.length === 0) {
     return "";
   }
@@ -17,6 +17,21 @@ function buildSentenceIndexRange(indexes: number[]): string {
 
 function uniqueSorted(values: number[]): number[] {
   return [...new Set(values)].sort((left, right) => left - right);
+}
+
+export function shouldPreferParagraphBoundary(
+  currentSceneDurationSeconds: number,
+  minSceneDurationSeconds: number,
+  maxSceneDurationSeconds: number,
+): boolean {
+  if (currentSceneDurationSeconds < minSceneDurationSeconds) {
+    return false;
+  }
+
+  const reasonableThreshold =
+    minSceneDurationSeconds + (maxSceneDurationSeconds - minSceneDurationSeconds) * 0.35;
+
+  return currentSceneDurationSeconds >= reasonableThreshold;
 }
 
 export function packSentencesIntoScenes(
@@ -36,6 +51,7 @@ export function packSentencesIntoScenes(
   while (cursor < units.length) {
     const startUnit = units[cursor];
     const sourceSentenceIndexes = [startUnit.sourceSentenceIndex];
+    const sourceParagraphIndexes = [startUnit.paragraphIndex];
     const sourceTypes = [startUnit.sourceType];
     const sentenceTexts = [startUnit.text];
     let sceneDuration = startUnit.estimatedDurationSeconds;
@@ -45,6 +61,14 @@ export function packSentencesIntoScenes(
 
     while (cursor < units.length) {
       const nextUnit = units[cursor];
+
+      if (
+        nextUnit.startsNewParagraph &&
+        shouldPreferParagraphBoundary(sceneDuration, minSceneDurationSeconds, maxSceneDurationSeconds)
+      ) {
+        break;
+      }
+
       const proposedDuration = sceneDuration + nextUnit.estimatedDurationSeconds;
       const overshoot = proposedDuration - maxSceneDurationSeconds;
       const canAddWithinOrNearMax =
@@ -59,6 +83,7 @@ export function packSentencesIntoScenes(
       }
 
       sourceSentenceIndexes.push(nextUnit.sourceSentenceIndex);
+      sourceParagraphIndexes.push(nextUnit.paragraphIndex);
       sourceTypes.push(nextUnit.sourceType);
       sentenceTexts.push(nextUnit.text);
       sceneDuration = proposedDuration;
@@ -67,6 +92,7 @@ export function packSentencesIntoScenes(
     }
 
     const uniqueSentenceIndexes = uniqueSorted(sourceSentenceIndexes);
+    const uniqueParagraphIndexes = uniqueSorted(sourceParagraphIndexes);
     const uniqueSourceTypes = [...new Set(sourceTypes)];
 
     scenes.push({
@@ -76,8 +102,11 @@ export function packSentencesIntoScenes(
       totalWordCount: sceneWordCount,
       sentenceCount: uniqueSentenceIndexes.length,
       sentenceIndexes: uniqueSentenceIndexes,
-      sentenceIndexRange: buildSentenceIndexRange(uniqueSentenceIndexes),
+      sentenceIndexRange: buildIndexRange(uniqueSentenceIndexes),
       unitSourceTypes: uniqueSourceTypes,
+      paragraphIndexes: uniqueParagraphIndexes,
+      paragraphIndexRange: buildIndexRange(uniqueParagraphIndexes),
+      crossesParagraphBoundary: uniqueParagraphIndexes.length > 1,
     });
   }
 

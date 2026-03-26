@@ -4,8 +4,8 @@ import {
   countWords,
   estimateDurationSeconds,
   normalizeText,
-  splitSentences,
 } from "@/modules/scene-splitter/text-utils";
+import { buildParagraphSentenceItems } from "@/modules/scene-splitter/paragraph-utils";
 import type { SentenceSplitRequest, SentenceSplitResponse } from "@/types/sentence";
 
 export const runtime = "nodejs";
@@ -21,7 +21,9 @@ export async function POST(request: Request) {
 
   const rawText = typeof body.text === "string" ? body.text : "";
   const normalizedText = normalizeText(rawText);
-  const sentences = splitSentences(normalizedText).map((text, index) => {
+  const sentenceItems = buildParagraphSentenceItems(normalizedText);
+  const sentences = sentenceItems.map((item, index) => {
+    const text = item.text;
     const wordCount = countWords(text);
 
     return {
@@ -29,6 +31,8 @@ export async function POST(request: Request) {
       text,
       wordCount,
       estimatedDurationSeconds: estimateDurationSeconds(wordCount),
+      paragraphIndex: item.paragraphIndex,
+      startsNewParagraph: item.startsNewParagraph,
     };
   });
 

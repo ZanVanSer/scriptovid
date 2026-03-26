@@ -184,6 +184,8 @@ export function toPackableTimedUnits(
         text: sentence.text,
         wordCount: sentence.wordCount,
         estimatedDurationSeconds: sentence.estimatedDurationSeconds,
+        paragraphIndex: sentence.paragraphIndex,
+        startsNewParagraph: sentence.startsNewParagraph,
       });
       continue;
     }
@@ -191,7 +193,7 @@ export function toPackableTimedUnits(
     const fragments = splitOversizedSentence(sentence.text, maxSceneDurationSeconds, wordsPerMinute);
     const sourceType = fragments.length > 1 ? "fallback-fragment" : "sentence";
 
-    for (const fragment of fragments) {
+    fragments.forEach((fragment, fragmentIndex) => {
       const wordCount = countWords(fragment);
 
       units.push({
@@ -200,8 +202,10 @@ export function toPackableTimedUnits(
         text: fragment,
         wordCount,
         estimatedDurationSeconds: estimateDurationSeconds(wordCount, wordsPerMinute),
+        paragraphIndex: sentence.paragraphIndex,
+        startsNewParagraph: fragmentIndex === 0 ? sentence.startsNewParagraph : false,
       });
-    }
+    });
   }
 
   return units;

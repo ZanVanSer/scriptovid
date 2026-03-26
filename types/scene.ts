@@ -12,6 +12,8 @@ export type PackableTimedUnit = {
   text: string;
   wordCount: number;
   estimatedDurationSeconds: number;
+  paragraphIndex: number;
+  startsNewParagraph: boolean;
 };
 
 export type PackedScene = {
@@ -23,6 +25,9 @@ export type PackedScene = {
   sentenceIndexes: number[];
   sentenceIndexRange: string;
   unitSourceTypes: TimedUnitSourceType[];
+  paragraphIndexes: number[];
+  paragraphIndexRange: string;
+  crossesParagraphBoundary: boolean;
 };
 
 export type ScenePackResult = {
