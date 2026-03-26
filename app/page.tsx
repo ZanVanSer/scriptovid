@@ -3,7 +3,13 @@
 import { useMemo, useState } from "react";
 
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
+import {
+  DEFAULT_MAX_SCENE_DURATION_SECONDS,
+  DEFAULT_MIN_SCENE_DURATION_SECONDS,
+  packSentencesIntoScenes,
+} from "@/modules/scene-splitter/scene-packer";
 import { SAMPLE_SCRIPT } from "@/modules/scene-splitter/sample-script";
+import type { ScenePackResult } from "@/types/scene";
 import type { SentenceSplitResponse } from "@/types/sentence";
 
 import styles from "./page.module.css";
@@ -11,8 +17,16 @@ import styles from "./page.module.css";
 export default function Home() {
   const [scriptText, setScriptText] = useState("");
   const [result, setResult] = useState<SentenceSplitResponse | null>(null);
+  const [scenePackResult, setScenePackResult] = useState<ScenePackResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scenePackError, setScenePackError] = useState<string | null>(null);
   const [isSplitting, setIsSplitting] = useState(false);
+  const [minSceneDurationSeconds, setMinSceneDurationSeconds] = useState(
+    String(DEFAULT_MIN_SCENE_DURATION_SECONDS),
+  );
+  const [maxSceneDurationSeconds, setMaxSceneDurationSeconds] = useState(
+    String(DEFAULT_MAX_SCENE_DURATION_SECONDS),
+  );
 
   const hasInput = useMemo(() => scriptText.trim().length > 0, [scriptText]);
 
@@ -35,6 +49,8 @@ export default function Home() {
 
       const data = (await response.json()) as SentenceSplitResponse;
       setResult(data);
+      setScenePackResult(null);
+      setScenePackError(null);
     } catch {
       setError("Unable to split text right now. Please try again.");
     } finally {
@@ -45,7 +61,41 @@ export default function Home() {
   function handleLoadSample() {
     setScriptText(SAMPLE_SCRIPT);
     setResult(null);
+    setScenePackResult(null);
     setError(null);
+    setScenePackError(null);
+  }
+
+  function handlePackScenes() {
+    setScenePackError(null);
+
+    if (!result || result.sentences.length === 0) {
+      setScenePackError("Split text into sentences before packing scenes.");
+      setScenePackResult(null);
+      return;
+    }
+
+    const min = Number(minSceneDurationSeconds);
+    const max = Number(maxSceneDurationSeconds);
+
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) {
+      setScenePackError("Scene durations must be numbers greater than 0.");
+      setScenePackResult(null);
+      return;
+    }
+
+    if (min > max) {
+      setScenePackError("Minimum scene duration cannot be greater than maximum.");
+      setScenePackResult(null);
+      return;
+    }
+
+    const packed = packSentencesIntoScenes(result.sentences, {
+      minSceneDurationSeconds: min,
+      maxSceneDurationSeconds: max,
+    });
+
+    setScenePackResult(packed);
   }
 
   return (
@@ -112,6 +162,68 @@ export default function Home() {
                 <div className={styles.listMeta}>
                   Duration: {sentence.estimatedDurationSeconds.toFixed(1)}s
                 </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.sectionRow}>
+            <h2 className={styles.sectionTitle}>Scene Packer</h2>
+          </div>
+          <div className={styles.controlsGrid}>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Min scene duration (s)</span>
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                className={styles.numberInput}
+                value={minSceneDurationSeconds}
+                onChange={(event) => setMinSceneDurationSeconds(event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Max scene duration (s)</span>
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                className={styles.numberInput}
+                value={maxSceneDurationSeconds}
+                onChange={(event) => setMaxSceneDurationSeconds(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.buttonPrimary}
+              onClick={handlePackScenes}
+              disabled={!result || result.sentences.length === 0}
+            >
+              Pack sentences into scenes
+            </button>
+          </div>
+          {scenePackError ? <p className={styles.error}>{scenePackError}</p> : null}
+          <div className={styles.summaryGrid}>
+            <div className={styles.summaryItem}>
+              Total scenes: {scenePackResult?.totalSceneCount ?? 0}
+            </div>
+            <div className={styles.summaryItem}>
+              Total scene duration: {(scenePackResult?.totalEstimatedDurationSeconds ?? 0).toFixed(1)}
+              s
+            </div>
+          </div>
+          <ol className={styles.sceneList}>
+            {(scenePackResult?.scenes ?? []).map((scene) => (
+              <li key={scene.index} className={styles.listItem}>
+                <div className={styles.listMeta}>Scene {scene.index}</div>
+                <p className={styles.sentenceText}>{scene.text}</p>
+                <div className={styles.listMeta}>Duration: {scene.estimatedDurationSeconds.toFixed(1)}s</div>
+                <div className={styles.listMeta}>Words: {scene.totalWordCount}</div>
+                <div className={styles.listMeta}>Sentences: {scene.sentenceCount}</div>
+                <div className={styles.listMeta}>Sentence indexes: {scene.sentenceIndexRange}</div>
               </li>
             ))}
           </ol>
