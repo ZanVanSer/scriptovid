@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
+import { detectSplitWarnings, validateScriptInput } from "@/modules/scene-splitter/input-quality";
 import {
   DEFAULT_MAX_SCENE_DURATION_SECONDS,
   DEFAULT_MIN_SCENE_DURATION_SECONDS,
@@ -20,6 +21,8 @@ export default function Home() {
   const [result, setResult] = useState<SentenceSplitResponse | null>(null);
   const [scenePackResult, setScenePackResult] = useState<ScenePackResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inputFeedback, setInputFeedback] = useState<string | null>(null);
+  const [splitWarnings, setSplitWarnings] = useState<string[]>([]);
   const [scenePackError, setScenePackError] = useState<string | null>(null);
   const [isSplitting, setIsSplitting] = useState(false);
   const [minSceneDurationSeconds, setMinSceneDurationSeconds] = useState(
@@ -29,11 +32,18 @@ export default function Home() {
     String(DEFAULT_MAX_SCENE_DURATION_SECONDS),
   );
 
-  const hasInput = useMemo(() => scriptText.trim().length > 0, [scriptText]);
-
   async function handleSplit() {
     setIsSplitting(true);
     setError(null);
+    setInputFeedback(null);
+
+    const validation = validateScriptInput(scriptText);
+
+    if (validation.blockingError) {
+      setInputFeedback(validation.blockingError);
+      setIsSplitting(false);
+      return;
+    }
 
     try {
       const response = await fetch("/api/sentence-split", {
@@ -49,9 +59,13 @@ export default function Home() {
       }
 
       const data = (await response.json()) as SentenceSplitResponse;
+      const warnings = detectSplitWarnings(data.normalizedText);
+
       setResult(data);
       setScenePackResult(null);
       setScenePackError(null);
+      setSplitWarnings(warnings);
+      setInputFeedback(validation.advisory);
     } catch {
       setError("Unable to split text right now. Please try again.");
     } finally {
@@ -64,6 +78,8 @@ export default function Home() {
     setResult(null);
     setScenePackResult(null);
     setError(null);
+    setInputFeedback(null);
+    setSplitWarnings([]);
     setScenePackError(null);
   }
 
@@ -123,12 +139,22 @@ export default function Home() {
               type="button"
               className={styles.buttonPrimary}
               onClick={handleSplit}
-              disabled={isSplitting || !hasInput}
+              disabled={isSplitting}
             >
               {isSplitting ? "Splitting..." : "Split into sentences"}
             </button>
           </div>
           {error ? <p className={styles.error}>{error}</p> : null}
+          {inputFeedback ? <p className={styles.info}>{inputFeedback}</p> : null}
+          {splitWarnings.length > 0 ? (
+            <ul className={styles.warningList}>
+              {splitWarnings.map((warning) => (
+                <li key={warning} className={styles.warningItem}>
+                  {warning}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
 
         <section className={styles.panel}>
@@ -224,13 +250,14 @@ export default function Home() {
                 <p className={styles.sentenceText}>{scene.text}</p>
                 <div className={styles.listMeta}>Duration: {scene.estimatedDurationSeconds.toFixed(1)}s</div>
                 <div className={styles.listMeta}>Words: {scene.totalWordCount}</div>
+                <div className={styles.listMeta}>Source units: {scene.sourceUnitCount}</div>
                 <div className={styles.listMeta}>Sentences: {scene.sentenceCount}</div>
                 <div className={styles.listMeta}>Sentence indexes: {scene.sentenceIndexRange}</div>
                 <div className={styles.listMeta}>Paragraph range: {scene.paragraphIndexRange}</div>
                 <div className={styles.listMeta}>
                   Crosses paragraph boundary: {scene.crossesParagraphBoundary ? "yes" : "no"}
                 </div>
-                <div className={styles.listMeta}>Unit sources: {scene.unitSourceTypes.join(", ")}</div>
+                <div className={styles.listMeta}>Unit sources: {scene.unitSourceTypeSummary}</div>
               </li>
             ))}
           </ol>

@@ -76,6 +76,23 @@
   font-size: 13px;
 }
 
+.info {
+  color: #57534e;
+  font-size: 13px;
+}
+
+.warningList {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.warningItem {
+  color: #9a3412;
+  font-size: 13px;
+}
+
 .sectionRow {
   display: flex;
   justify-content: space-between;

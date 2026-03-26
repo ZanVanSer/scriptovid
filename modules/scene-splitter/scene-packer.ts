@@ -1,4 +1,10 @@
-import type { PackedScene, ScenePackInput, ScenePackResult, ScenePackSettings } from "@/types/scene";
+import type {
+  PackedScene,
+  ScenePackInput,
+  ScenePackResult,
+  ScenePackSettings,
+  TimedUnitSourceType,
+} from "@/types/scene";
 
 export const DEFAULT_MIN_SCENE_DURATION_SECONDS = 6;
 export const DEFAULT_MAX_SCENE_DURATION_SECONDS = 12;
@@ -17,6 +23,16 @@ function buildIndexRange(indexes: number[]): string {
 
 function uniqueSorted(values: number[]): number[] {
   return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function buildSourceTypeSummary(values: TimedUnitSourceType[]): string {
+  const counts = new Map<string, number>();
+
+  for (const value of values) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+
+  return [...counts.entries()].map(([key, count]) => `${key}: ${count}`).join(", ");
 }
 
 export function shouldPreferParagraphBoundary(
@@ -100,10 +116,12 @@ export function packSentencesIntoScenes(
       text: sentenceTexts.join(" "),
       estimatedDurationSeconds: sceneDuration,
       totalWordCount: sceneWordCount,
+      sourceUnitCount: sentenceTexts.length,
       sentenceCount: uniqueSentenceIndexes.length,
       sentenceIndexes: uniqueSentenceIndexes,
       sentenceIndexRange: buildIndexRange(uniqueSentenceIndexes),
       unitSourceTypes: uniqueSourceTypes,
+      unitSourceTypeSummary: buildSourceTypeSummary(sourceTypes),
       paragraphIndexes: uniqueParagraphIndexes,
       paragraphIndexRange: buildIndexRange(uniqueParagraphIndexes),
       crossesParagraphBoundary: uniqueParagraphIndexes.length > 1,

@@ -21,10 +21,12 @@ export type PackedScene = {
   text: string;
   estimatedDurationSeconds: number;
   totalWordCount: number;
+  sourceUnitCount: number;
   sentenceCount: number;
   sentenceIndexes: number[];
   sentenceIndexRange: string;
   unitSourceTypes: TimedUnitSourceType[];
+  unitSourceTypeSummary: string;
   paragraphIndexes: number[];
   paragraphIndexRange: string;
   crossesParagraphBoundary: boolean;
