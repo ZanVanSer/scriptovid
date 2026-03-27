@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
@@ -16,8 +16,25 @@ import type { SentenceSplitResponse } from "@/types/sentence";
 
 import styles from "./page.module.css";
 
+type SceneImageState = {
+  fileName: string;
+  objectUrl: string;
+};
+
+const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const ACCEPTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+
 function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
+}
+
+function isAllowedImageFile(file: File) {
+  if (ACCEPTED_IMAGE_TYPES.has(file.type)) {
+    return true;
+  }
+
+  const lowerName = file.name.toLowerCase();
+  return ACCEPTED_IMAGE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
 }
 
 export default function Home() {
@@ -35,6 +52,93 @@ export default function Home() {
   const [maxSceneDurationSeconds, setMaxSceneDurationSeconds] = useState(
     String(DEFAULT_MAX_SCENE_DURATION_SECONDS),
   );
+  const [sceneImages, setSceneImages] = useState<Record<number, SceneImageState>>({});
+  const [sceneImageErrors, setSceneImageErrors] = useState<Record<number, string>>({});
+  const [activeDropSceneIndex, setActiveDropSceneIndex] = useState<number | null>(null);
+  const sceneImagesRef = useRef<Record<number, SceneImageState>>({});
+
+  useEffect(() => {
+    sceneImagesRef.current = sceneImages;
+  }, [sceneImages]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(sceneImagesRef.current).forEach((entry) => {
+        URL.revokeObjectURL(entry.objectUrl);
+      });
+    };
+  }, []);
+
+  function clearSceneImageErrorsFor(sceneIndex: number) {
+    setSceneImageErrors((current) => {
+      if (!current[sceneIndex]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[sceneIndex];
+      return next;
+    });
+  }
+
+  function clearAllSceneImages() {
+    setSceneImages((current) => {
+      Object.values(current).forEach((entry) => {
+        URL.revokeObjectURL(entry.objectUrl);
+      });
+      return {};
+    });
+    setSceneImageErrors({});
+    setActiveDropSceneIndex(null);
+  }
+
+  function removeSceneImage(sceneIndex: number) {
+    setSceneImages((current) => {
+      const existing = current[sceneIndex];
+      if (!existing) {
+        return current;
+      }
+
+      URL.revokeObjectURL(existing.objectUrl);
+      const next = { ...current };
+      delete next[sceneIndex];
+      return next;
+    });
+    clearSceneImageErrorsFor(sceneIndex);
+  }
+
+  function applySceneImageFile(sceneIndex: number, file: File) {
+    if (!isAllowedImageFile(file)) {
+      setSceneImageErrors((current) => ({
+        ...current,
+        [sceneIndex]: "Please upload a PNG, JPG, JPEG, or WEBP image.",
+      }));
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+
+    setSceneImages((current) => {
+      const existing = current[sceneIndex];
+      if (existing) {
+        URL.revokeObjectURL(existing.objectUrl);
+      }
+
+      return {
+        ...current,
+        [sceneIndex]: {
+          fileName: file.name,
+          objectUrl,
+        },
+      };
+    });
+    clearSceneImageErrorsFor(sceneIndex);
+  }
+
+  function openSceneFilePicker(sceneIndex: number) {
+    const input = document.getElementById(`scene-upload-${sceneIndex}`) as HTMLInputElement | null;
+    input?.click();
+  }
 
   async function handleSplit() {
     setIsSplitting(true);
@@ -65,6 +169,7 @@ export default function Home() {
       const data = (await response.json()) as SentenceSplitResponse;
       const warnings = detectSplitWarnings(data.normalizedText);
 
+      clearAllSceneImages();
       setResult(data);
       setScenePackResult(null);
       setScenePackError(null);
@@ -78,6 +183,7 @@ export default function Home() {
   }
 
   function handleLoadSample() {
+    clearAllSceneImages();
     setScriptText(SAMPLE_SCRIPT);
     setResult(null);
     setScenePackResult(null);
@@ -117,6 +223,7 @@ export default function Home() {
       maxSceneDurationSeconds: max,
     });
 
+    clearAllSceneImages();
     setScenePackResult(packed);
   }
 
@@ -223,7 +330,77 @@ export default function Home() {
                     <p className={styles.cardTitle}>Scene {scene.index}</p>
                     <p className={styles.cardMeta}>{formatSeconds(scene.estimatedDurationSeconds)}</p>
                   </div>
-                  <div className={styles.imagePlaceholder}>Image placeholder</div>
+                  <div
+                    className={`${styles.imagePlaceholder} ${
+                      activeDropSceneIndex === scene.index ? styles.imagePlaceholderActive : ""
+                    }`}
+                    onClick={() => openSceneFilePicker(scene.index)}
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      setActiveDropSceneIndex(scene.index);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      setActiveDropSceneIndex(scene.index);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      if (activeDropSceneIndex === scene.index) {
+                        setActiveDropSceneIndex(null);
+                      }
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      setActiveDropSceneIndex(null);
+                      const file = event.dataTransfer.files.item(0);
+                      if (file) {
+                        applySceneImageFile(scene.index, file);
+                      }
+                    }}
+                  >
+                    {sceneImages[scene.index] ? (
+                      <img
+                        src={sceneImages[scene.index].objectUrl}
+                        alt={`Scene ${scene.index} uploaded preview`}
+                        className={styles.sceneImage}
+                      />
+                    ) : (
+                      <p className={styles.placeholderText}>Image placeholder</p>
+                    )}
+                  </div>
+                  <input
+                    id={`scene-upload-${scene.index}`}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                    className={styles.fileInput}
+                    onChange={(event) => {
+                      const file = event.target.files?.item(0);
+                      if (file) {
+                        applySceneImageFile(scene.index, file);
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                  <div className={styles.cardActions}>
+                    <label htmlFor={`scene-upload-${scene.index}`} className={styles.smallButton}>
+                      {sceneImages[scene.index] ? "Replace" : "Upload"}
+                    </label>
+                    {sceneImages[scene.index] ? (
+                      <button
+                        type="button"
+                        className={styles.smallButton}
+                        onClick={() => removeSceneImage(scene.index)}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  {sceneImages[scene.index] ? (
+                    <p className={styles.fileMeta}>{sceneImages[scene.index].fileName}</p>
+                  ) : null}
+                  {sceneImageErrors[scene.index] ? (
+                    <p className={styles.inlineError}>{sceneImageErrors[scene.index]}</p>
+                  ) : null}
                   <p className={styles.scenePreview}>{scene.text}</p>
                 </li>
               ))}
