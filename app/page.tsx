@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_NANOBANANA_MODEL,
   NANOBANANA_MODELS,
+  NanobananaError,
+  generateNanobananaImage,
   type NanobananaModel,
 } from "@/modules/image-generation/nanobanana";
 import {
@@ -31,11 +33,21 @@ type SceneImageState = {
   label: string;
   objectUrl: string;
   source: "manual" | "nanobanana";
+  generatedPrompt?: string;
+  generatedModel?: string;
 };
 
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const ACCEPTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
 type ImageSourceMode = "manual" | "nanobanana";
+type SceneGenerationStatus = "idle" | "loading" | "done" | "error";
+
+type SceneGenerationState = {
+  status: SceneGenerationStatus;
+  errorMessage?: string;
+  usedPrompt?: string;
+  usedModel?: NanobananaModel;
+};
 
 function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
@@ -74,6 +86,10 @@ export default function Home() {
   const [selectedVisualStyle, setSelectedVisualStyle] = useState<VisualStylePresetId>(
     DEFAULT_VISUAL_STYLE_PRESET_ID,
   );
+  const [nanobananaApiKeyOverride, setNanobananaApiKeyOverride] = useState("");
+  const [sceneGenerationStates, setSceneGenerationStates] = useState<Record<number, SceneGenerationState>>(
+    {},
+  );
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -108,6 +124,7 @@ export default function Home() {
     });
     setSceneImageErrors({});
     setActiveDropSceneIndex(null);
+    setSceneGenerationStates({});
   }
 
   function removeSceneImage(sceneIndex: number) {
@@ -123,6 +140,12 @@ export default function Home() {
       return next;
     });
     clearSceneImageErrorsFor(sceneIndex);
+    setSceneGenerationStates((current) => ({
+      ...current,
+      [sceneIndex]: {
+        status: "idle",
+      },
+    }));
   }
 
   function applySceneImageFile(sceneIndex: number, file: File) {
@@ -152,6 +175,113 @@ export default function Home() {
       };
     });
     clearSceneImageErrorsFor(sceneIndex);
+    setSceneGenerationStates((current) => ({
+      ...current,
+      [sceneIndex]: {
+        status: "done",
+      },
+    }));
+  }
+
+  function resolveNanobananaApiKey() {
+    const overrideKey = nanobananaApiKeyOverride.trim();
+    if (overrideKey) {
+      return overrideKey;
+    }
+
+    return process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  }
+
+  async function generateSceneImage(sceneIndex: number, prompt: string) {
+    const apiKey = resolveNanobananaApiKey();
+    if (!apiKey) {
+      const message =
+        "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or provide a local override key.";
+      setSceneGenerationStates((current) => ({
+        ...current,
+        [sceneIndex]: {
+          status: "error",
+          errorMessage: message,
+          usedPrompt: prompt,
+          usedModel: nanobananaModel,
+        },
+      }));
+      setSceneImageErrors((current) => ({
+        ...current,
+        [sceneIndex]: message,
+      }));
+      return;
+    }
+
+    setSceneGenerationStates((current) => ({
+      ...current,
+      [sceneIndex]: {
+        status: "loading",
+        usedPrompt: prompt,
+        usedModel: nanobananaModel,
+      },
+    }));
+    clearSceneImageErrorsFor(sceneIndex);
+
+    try {
+      const result = await generateNanobananaImage({
+        prompt,
+        model: nanobananaModel,
+        apiKey,
+        aspectRatio: "16:9",
+      });
+
+      const blob = await fetch(result.imageUrl).then(async (response) => response.blob());
+      const objectUrl = URL.createObjectURL(blob);
+
+      setSceneImages((current) => {
+        const existing = current[sceneIndex];
+        if (existing) {
+          URL.revokeObjectURL(existing.objectUrl);
+        }
+
+        return {
+          ...current,
+          [sceneIndex]: {
+            label: `Generated · ${nanobananaModel}`,
+            objectUrl,
+            source: "nanobanana",
+            generatedPrompt: prompt,
+            generatedModel: nanobananaModel,
+          },
+        };
+      });
+
+      setSceneGenerationStates((current) => ({
+        ...current,
+        [sceneIndex]: {
+          status: "done",
+          usedPrompt: prompt,
+          usedModel: nanobananaModel,
+        },
+      }));
+    } catch (generationError) {
+      let message = "Image generation failed.";
+      if (generationError instanceof NanobananaError) {
+        message = generationError.message;
+      } else if (generationError instanceof Error) {
+        message = generationError.message;
+      }
+
+      setSceneGenerationStates((current) => ({
+        ...current,
+        [sceneIndex]: {
+          status: "error",
+          errorMessage: message,
+          usedPrompt: prompt,
+          usedModel: nanobananaModel,
+        },
+      }));
+      setSceneImageErrors((current) => ({
+        ...current,
+        [sceneIndex]: message,
+      }));
+    }
   }
 
   function openSceneFilePicker(sceneIndex: number) {
@@ -260,6 +390,10 @@ export default function Home() {
     }, {});
   }, [scenePackResult, selectedVisualStyle]);
 
+  function getSceneGenerationStatus(sceneIndex: number): SceneGenerationState {
+    return sceneGenerationStates[sceneIndex] || { status: "idle" };
+  }
+
   return (
     <div className={styles.page}>
       <main className={styles.container}>
@@ -337,20 +471,32 @@ export default function Home() {
               </select>
             </label>
             {imageSourceMode === "nanobanana" ? (
-              <label className={styles.field}>
-                <span className={styles.fieldLabel}>Nanobanana model</span>
-                <select
-                  className={styles.selectInput}
-                  value={nanobananaModel}
-                  onChange={(event) => setNanobananaModel(event.target.value as NanobananaModel)}
-                >
-                  {NANOBANANA_MODELS.map((modelOption) => (
-                    <option key={modelOption} value={modelOption}>
-                      {modelOption}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Nanobanana model</span>
+                  <select
+                    className={styles.selectInput}
+                    value={nanobananaModel}
+                    onChange={(event) => setNanobananaModel(event.target.value as NanobananaModel)}
+                  >
+                    {NANOBANANA_MODELS.map((modelOption) => (
+                      <option key={modelOption} value={modelOption}>
+                        {modelOption}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Local API key override (optional)</span>
+                  <input
+                    type="password"
+                    className={styles.numberInput}
+                    value={nanobananaApiKeyOverride}
+                    onChange={(event) => setNanobananaApiKeyOverride(event.target.value)}
+                    placeholder="Use NEXT_PUBLIC_GEMINI_API_KEY if empty"
+                  />
+                </label>
+              </>
             ) : null}
           </div>
           <div className={styles.controlsGrid}>
@@ -499,7 +645,17 @@ export default function Home() {
                     </>
                   ) : (
                     <div className={styles.cardActions}>
-                      {sceneImages[scene.index] ? (
+                      <button
+                        type="button"
+                        className={styles.smallButton}
+                        disabled={getSceneGenerationStatus(scene.index).status === "loading"}
+                        onClick={() => generateSceneImage(scene.index, scenePrompts[scene.index] || scene.text)}
+                      >
+                        {getSceneGenerationStatus(scene.index).status === "loading"
+                          ? "Generating..."
+                          : "Generate image"}
+                      </button>
+                      {sceneImages[scene.index]?.source === "nanobanana" ? (
                         <button
                           type="button"
                           className={styles.smallButton}
@@ -508,11 +664,19 @@ export default function Home() {
                           Remove
                         </button>
                       ) : null}
-                      <p className={styles.modeNote}>Manual upload disabled in Nanobanana mode.</p>
+                      <p className={styles.modeNote}>Uses selected style + model for this scene only.</p>
                     </div>
                   )}
                   {sceneImages[scene.index] ? (
                     <p className={styles.fileMeta}>{sceneImages[scene.index].label}</p>
+                  ) : null}
+                  {imageSourceMode === "nanobanana" ? (
+                    <p className={styles.fileMeta}>
+                      Status: {getSceneGenerationStatus(scene.index).status}
+                      {getSceneGenerationStatus(scene.index).usedModel
+                        ? ` · Model: ${getSceneGenerationStatus(scene.index).usedModel}`
+                        : ""}
+                    </p>
                   ) : null}
                   {sceneImageErrors[scene.index] ? (
                     <p className={styles.inlineError}>{sceneImageErrors[scene.index]}</p>
@@ -522,6 +686,11 @@ export default function Home() {
                     <summary className={styles.promptSummary}>Prompt preview</summary>
                     <p className={styles.promptSource}>Scene text: {scene.text}</p>
                     <p className={styles.promptText}>{scenePrompts[scene.index] || "Prompt unavailable."}</p>
+                    {getSceneGenerationStatus(scene.index).usedPrompt ? (
+                      <p className={styles.promptSource}>
+                        Last generated prompt: {getSceneGenerationStatus(scene.index).usedPrompt}
+                      </p>
+                    ) : null}
                   </details>
                 </li>
               ))}

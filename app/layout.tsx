@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Script to Video - Phase 2.4.1",
-  description: "Local storyboard with style-based prompt builder foundation.",
+  title: "Script to Video - Phase 2.4.3",
+  description: "Single-scene Gemini image generation in Nanobanana mode.",
 };
 
 export default function RootLayout({

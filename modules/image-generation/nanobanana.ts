@@ -14,6 +14,7 @@ export type GenerateNanobananaImageInput = {
   prompt: string;
   model: NanobananaModel;
   apiKey: string;
+  aspectRatio?: "16:9" | "9:16" | "1:1" | "4:3" | "3:4" | "3:2" | "2:3" | "21:9";
 };
 
 export type NanobananaImageResult = {
@@ -56,10 +57,33 @@ type GeminiGenerateContentResponse = {
   };
 };
 
+export class NanobananaError extends Error {
+  statusCode?: number;
+
+  constructor(message: string, statusCode?: number) {
+    super(message);
+    this.name = "NanobananaError";
+    this.statusCode = statusCode;
+  }
+}
+
+function mapHttpErrorMessage(statusCode: number, fallbackMessage: string) {
+  if (statusCode === 401 || statusCode === 403) {
+    return "Gemini API authentication failed. Check your API key and model access.";
+  }
+
+  if (statusCode === 429) {
+    return "Gemini API quota or rate limit reached. Try again in a moment.";
+  }
+
+  return fallbackMessage;
+}
+
 export async function generateNanobananaImage({
   prompt,
   model,
   apiKey,
+  aspectRatio = "16:9",
 }: GenerateNanobananaImageInput): Promise<NanobananaImageResult> {
   const trimmedPrompt = prompt.trim();
   if (!trimmedPrompt) {
@@ -84,19 +108,23 @@ export async function generateNanobananaImage({
         },
       ],
       generationConfig: {
-        responseModalities: ["Image"],
         imageConfig: {
-          aspectRatio: "16:9",
+          aspectRatio,
         },
       },
     }),
   });
 
-  const data = (await response.json()) as GeminiGenerateContentResponse;
+  const data = (await response.json().catch(() => null)) as GeminiGenerateContentResponse | null;
 
   if (!response.ok) {
-    const message = data.error?.message || "Gemini image generation request failed.";
-    throw new Error(message);
+    const fallbackMessage = data?.error?.message || "Gemini image generation request failed.";
+    const message = mapHttpErrorMessage(response.status, fallbackMessage);
+    throw new NanobananaError(message, response.status);
+  }
+
+  if (!data) {
+    throw new NanobananaError("Gemini returned an empty response.");
   }
 
   const parts = data.candidates?.[0]?.content?.parts || [];
@@ -113,5 +141,5 @@ export async function generateNanobananaImage({
     }
   }
 
-  throw new Error("No image data found in Gemini response.");
+  throw new NanobananaError("Gemini response did not include image data.");
 }
