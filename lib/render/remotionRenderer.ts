@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { validateRenderProject } from "@/modules/video-renderer/render-project";
 import type { RenderNarration, RenderProject, RenderScene } from "@/types/render-project";
+import { resolveSceneMotionPreset } from "@/remotion/lib/motionPresets";
 
 import type { RemotionRenderProps } from "@/remotion/VideoComposition";
 
@@ -118,10 +119,11 @@ export async function convertRenderProjectToRemotionProps(
   const width = renderProject.settings.width;
   const height = renderProject.settings.height;
   const scenes = await Promise.all(
-    renderProject.scenes.map(async (scene) => ({
+    renderProject.scenes.map(async (scene, sceneIndex) => ({
       id: scene.id || String(scene.order),
       imageUrl: await resolveSceneImageUrl(scene),
       durationFrames: secondsToFrames(scene.finalDuration, fps),
+      motionPreset: resolveSceneMotionPreset(scene, sceneIndex, renderProject.settings.motion),
     })),
   );
   const narration = renderProject.narration
@@ -148,6 +150,7 @@ export async function convertRenderProjectToRemotionProps(
     width,
     height,
     fps,
+    motionStrength: renderProject.settings.motion.strength,
     scenes,
     narration,
   };

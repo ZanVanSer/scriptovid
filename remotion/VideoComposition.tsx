@@ -1,17 +1,20 @@
 import { Audio, Sequence } from "remotion";
 
 import { SceneFrame } from "./components/SceneFrame";
+import type { RemotionMotionPresetName } from "./lib/motionPresets";
 
 export type RemotionRenderScene = {
   id: string;
   imageUrl: string;
   durationFrames: number;
+  motionPreset?: RemotionMotionPresetName;
 };
 
 export type RemotionRenderProps = {
   width: number;
   height: number;
   fps: number;
+  motionStrength: "weak" | "medium" | "strong";
   scenes: RemotionRenderScene[];
   narration?: {
     audioUrl: string;
@@ -22,6 +25,7 @@ export const DEFAULT_REMOTION_RENDER_PROPS: RemotionRenderProps = {
   width: 1280,
   height: 720,
   fps: 30,
+  motionStrength: "medium",
   scenes: [
     {
       id: "placeholder",
@@ -44,7 +48,14 @@ export function VideoComposition(props: RemotionRenderProps) {
 
         return (
           <Sequence key={scene.id} from={from} durationInFrames={scene.durationFrames}>
-            <SceneFrame imageUrl={scene.imageUrl} width={props.width} height={props.height} />
+            <SceneFrame
+              imageUrl={scene.imageUrl}
+              width={props.width}
+              height={props.height}
+              durationInFrames={scene.durationFrames}
+              motionPreset={scene.motionPreset}
+              motionStrength={props.motionStrength}
+            />
           </Sequence>
         );
       })}

@@ -33,7 +33,7 @@ import {
   type NarrationMode,
   type NarrationState,
 } from "@/types/narration";
-import type { MotionPresetId } from "@/types/render-project";
+import type { MotionPresetId, MotionSettings } from "@/types/render-project";
 import type { ScenePackResult } from "@/types/scene";
 import type { SentenceSplitResponse } from "@/types/sentence";
 
@@ -314,7 +314,7 @@ export default function Home() {
   const [clearGeneratedMessage, setClearGeneratedMessage] = useState<string | null>(null);
   const [motionEnabled, setMotionEnabled] = useState(true);
   const [allowedMotionPresetIds, setAllowedMotionPresetIds] = useState<MotionPresetId[]>(MOTION_PRESET_IDS);
-  const [motionSpeed, setMotionSpeed] = useState<0.5 | 0.75 | 1>(0.75);
+  const [motionStrength, setMotionStrength] = useState<MotionSettings["strength"]>("medium");
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -1175,7 +1175,7 @@ export default function Home() {
         enabled: motionEnabled,
         allowedPresetIds: allowedMotionPresetIds,
         assignmentMode: "deterministic-by-scene-index",
-        speed: motionSpeed,
+        strength: motionStrength,
       },
       motionAssignmentSalt,
     });
@@ -1187,7 +1187,7 @@ export default function Home() {
     narration,
     motionEnabled,
     allowedMotionPresetIds,
-    motionSpeed,
+    motionStrength,
   ]);
   const assignedMotionCount = renderProject.scenes.filter((scene) => scene.motionPreset).length;
   const durationDeltaSeconds =
@@ -1969,23 +1969,23 @@ export default function Home() {
               <span className={styles.fieldLabel}>Enable motion effects</span>
             </label>
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Motion speed</span>
+              <span className={styles.fieldLabel}>Motion Strength</span>
               <select
                 className={styles.selectInput}
-                value={String(motionSpeed)}
+                value={motionStrength}
                 disabled={!motionEnabled}
                 onChange={(event) => {
-                  const next = Number(event.target.value);
-                  if (next === 0.5 || next === 1) {
-                    setMotionSpeed(next);
-                  } else {
-                    setMotionSpeed(0.75);
+                  const nextValue = event.target.value;
+                  if (nextValue === "weak" || nextValue === "strong") {
+                    setMotionStrength(nextValue);
+                    return;
                   }
+                  setMotionStrength("medium");
                 }}
               >
-                <option value="0.5">Slow</option>
-                <option value="0.75">Medium</option>
-                <option value="1">Fast</option>
+                <option value="weak">Weak</option>
+                <option value="medium">Medium</option>
+                <option value="strong">Strong</option>
               </select>
             </label>
             <div className={styles.motionPresetGrid}>

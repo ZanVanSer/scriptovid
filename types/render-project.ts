@@ -18,6 +18,7 @@ export type MotionSettings = {
   allowedPresetIds: MotionPresetId[];
   assignmentMode: "deterministic-by-scene-index";
   speed: 0.5 | 0.75 | 1;
+  strength: "weak" | "medium" | "strong";
 };
 
 export type RenderImageAsset = {
@@ -100,5 +101,6 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
     ],
     assignmentMode: "deterministic-by-scene-index",
     speed: 0.75,
+    strength: "medium",
   },
 };

@@ -150,7 +150,34 @@ function resolveMotionSettings(appState: RenderProjectAppState): MotionSettings 
     allowedPresetIds: normalizedAllowedPresetIds,
     assignmentMode: "deterministic-by-scene-index",
     speed: mergedMotion.speed === 0.5 || mergedMotion.speed === 1 ? mergedMotion.speed : 0.75,
+    strength: mergedMotion.strength === "weak" || mergedMotion.strength === "strong" ? mergedMotion.strength : "medium",
   };
+}
+
+function assignMotionPresetBySceneIndex(
+  sceneIndex: number,
+  allowedPresetIds: MotionSettings["allowedPresetIds"],
+  assignmentSalt?: string,
+) {
+  if (allowedPresetIds.length === 0) {
+    return undefined;
+  }
+
+  const normalizedSceneIndex = Number.isFinite(sceneIndex) && sceneIndex >= 0 ? Math.floor(sceneIndex) : 0;
+  if (!assignmentSalt) {
+    const presetIndex = normalizedSceneIndex % allowedPresetIds.length;
+    return allowedPresetIds[presetIndex];
+  }
+
+  let hash = 2166136261;
+  const seed = `${normalizedSceneIndex}:${assignmentSalt}`;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  const presetIndex = (hash >>> 0) % allowedPresetIds.length;
+  return allowedPresetIds[presetIndex];
 }
 
 function isFinitePositiveNumber(value: number | undefined) {
@@ -354,7 +381,17 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
         }))
       : estimatedScenes;
 
-  const scenes = timingAdjustedScenes.map((scene) => ({ ...scene }));
+  const scenes = timingAdjustedScenes.map((scene, sceneIndex) => ({
+    ...scene,
+    motionPreset:
+      motionSettings.enabled && motionSettings.allowedPresetIds.length > 0
+        ? assignMotionPresetBySceneIndex(
+            sceneIndex,
+            motionSettings.allowedPresetIds,
+            appState.motionAssignmentSalt,
+          )
+        : undefined,
+  }));
 
   const totalFinalSceneDuration = scenes.reduce((sum, scene) => sum + scene.finalDuration, 0);
 
