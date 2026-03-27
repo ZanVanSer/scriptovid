@@ -1,6 +1,19 @@
 export type NarrationMode = "manual" | "elevenlabs";
 
 export type NarrationStatus = "idle" | "loading" | "done" | "error";
+export type NarrationProvider = "manual" | "elevenlabs";
+
+export type NarrationAsset = {
+  provider: NarrationProvider;
+  audioUrl?: string;
+  filePath?: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
+  duration?: number;
+  voiceId?: string;
+  modelId?: string;
+};
 
 export type ElevenLabsNarrationSettings = {
   voiceId?: string;
@@ -14,13 +27,7 @@ export type ElevenLabsNarrationSettings = {
 export type NarrationState = {
   mode: NarrationMode;
   status: NarrationStatus;
-  provider?: "manual" | "elevenlabs";
-  audioUrl?: string;
-  audioPath?: string;
-  fileName?: string;
-  mimeType?: string;
-  fileSize?: number;
-  duration?: number;
+  asset?: NarrationAsset;
   error?: string;
   elevenLabs: ElevenLabsNarrationSettings;
 };
@@ -29,13 +36,7 @@ export function createDefaultNarrationState(): NarrationState {
   return {
     mode: "manual",
     status: "idle",
-    provider: undefined,
-    audioUrl: undefined,
-    audioPath: undefined,
-    fileName: undefined,
-    mimeType: undefined,
-    fileSize: undefined,
-    duration: undefined,
+    asset: undefined,
     error: undefined,
     elevenLabs: {
       voiceId: undefined,
@@ -46,4 +47,12 @@ export function createDefaultNarrationState(): NarrationState {
       useSpeakerBoost: true,
     },
   };
+}
+
+export function isNarrationReadyForRender(narration: NarrationState) {
+  if (narration.status !== "done") {
+    return false;
+  }
+
+  return Boolean(narration.asset?.audioUrl || narration.asset?.filePath);
 }

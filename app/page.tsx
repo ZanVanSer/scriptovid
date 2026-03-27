@@ -26,6 +26,8 @@ import {
 import { SAMPLE_SCRIPT } from "@/modules/scene-splitter/sample-script";
 import {
   createDefaultNarrationState,
+  isNarrationReadyForRender,
+  type NarrationAsset,
   type NarrationMode,
   type NarrationState,
 } from "@/types/narration";
@@ -246,8 +248,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    narrationAudioUrlRef.current = narration.audioUrl;
-  }, [narration.audioUrl]);
+    narrationAudioUrlRef.current = narration.asset?.audioUrl;
+  }, [narration.asset?.audioUrl]);
 
   useEffect(() => {
     return () => {
@@ -259,18 +261,12 @@ export default function Home() {
     narrationUploadRequestRef.current += 1;
     narrationGenerationRequestRef.current += 1;
     setNarration((current) => {
-      revokeAudioObjectUrlIfNeeded(current.audioUrl);
+      revokeAudioObjectUrlIfNeeded(current.asset?.audioUrl);
 
       return {
         ...current,
         status: "idle",
-        provider: undefined,
-        audioUrl: undefined,
-        audioPath: undefined,
-        fileName: undefined,
-        mimeType: undefined,
-        fileSize: undefined,
-        duration: undefined,
+        asset: undefined,
         error: undefined,
       };
     });
@@ -305,19 +301,21 @@ export default function Home() {
     }
 
     setNarration((current) => {
-      revokeAudioObjectUrlIfNeeded(current.audioUrl);
+      revokeAudioObjectUrlIfNeeded(current.asset?.audioUrl);
 
       return {
         ...current,
         mode: "manual",
         status: "done",
-        provider: "manual",
-        audioUrl: objectUrl,
-        audioPath: undefined,
-        fileName: file.name,
-        mimeType: file.type || undefined,
-        fileSize: file.size,
-        duration,
+        asset: {
+          provider: "manual",
+          audioUrl: objectUrl,
+          filePath: undefined,
+          fileName: file.name,
+          mimeType: file.type || undefined,
+          fileSize: file.size,
+          duration,
+        },
         error: undefined,
       };
     });
@@ -519,19 +517,23 @@ export default function Home() {
     }
 
     setNarration((current) => {
-      revokeAudioObjectUrlIfNeeded(current.audioUrl);
+      revokeAudioObjectUrlIfNeeded(current.asset?.audioUrl);
 
       return {
         ...current,
         mode: "elevenlabs",
         status: "done",
-        provider: generated.provider,
-        audioUrl: generated.audioUrl,
-        audioPath: generated.audioPath,
-        fileName: generated.fileName,
-        mimeType: generated.mimeType,
-        fileSize: generated.fileSize,
-        duration,
+        asset: {
+          provider: generated.provider,
+          audioUrl: generated.audioUrl,
+          filePath: generated.audioPath,
+          fileName: generated.fileName,
+          mimeType: generated.mimeType,
+          fileSize: generated.fileSize,
+          duration,
+          voiceId: generated.voiceId,
+          modelId: generated.modelId,
+        },
         error: undefined,
         elevenLabs: {
           ...current.elevenLabs,
@@ -967,6 +969,55 @@ export default function Home() {
     );
   }, [scenePackResult, sceneGenerationStates]);
 
+  useEffect(() => {
+    if (narration.status !== "done") {
+      return;
+    }
+
+    if (!narration.asset?.audioUrl || typeof narration.asset.duration === "number") {
+      return;
+    }
+
+    const currentAudioUrl = narration.asset.audioUrl;
+    let isCancelled = false;
+
+    void extractAudioDurationFromAudioSource(currentAudioUrl).then((duration) => {
+      if (isCancelled || duration === undefined) {
+        return;
+      }
+
+      setNarration((current) => {
+        if (current.asset?.audioUrl !== currentAudioUrl) {
+          return current;
+        }
+
+        if (typeof current.asset.duration === "number") {
+          return current;
+        }
+
+        return {
+          ...current,
+          asset: {
+            ...current.asset,
+            duration,
+          },
+        };
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [narration.status, narration.asset?.audioUrl, narration.asset?.duration]);
+
+  const activeNarrationAsset: NarrationAsset | undefined = narration.asset;
+  const isNarrationReady = isNarrationReadyForRender(narration);
+  const durationDeltaSeconds =
+    typeof activeNarrationAsset?.duration === "number" &&
+    typeof result?.totalEstimatedDurationSeconds === "number"
+      ? activeNarrationAsset.duration - result.totalEstimatedDurationSeconds
+      : undefined;
+
   return (
     <div className={styles.page}>
       <main className={styles.container}>
@@ -1341,7 +1392,21 @@ export default function Home() {
           <div className={styles.summaryGrid}>
             <div className={styles.summaryItem}>Mode: {narration.mode}</div>
             <div className={styles.summaryItem}>Status: {narration.status}</div>
+            <div className={styles.summaryItem}>Provider: {activeNarrationAsset?.provider || "—"}</div>
+            <div className={styles.summaryItem}>
+              Duration:{" "}
+              {typeof activeNarrationAsset?.duration === "number"
+                ? formatDurationClock(activeNarrationAsset.duration)
+                : "—"}
+            </div>
+            <div className={styles.summaryItem}>Ready for render: {isNarrationReady ? "Yes" : "No"}</div>
           </div>
+          {typeof durationDeltaSeconds === "number" ? (
+            <p className={styles.info}>
+              Script estimate vs narration: {durationDeltaSeconds >= 0 ? "+" : ""}
+              {formatSeconds(durationDeltaSeconds)}
+            </p>
+          ) : null}
           {narration.mode === "manual" ? (
             <>
               <div
@@ -1371,7 +1436,9 @@ export default function Home() {
                 }}
               >
                 <p className={styles.placeholderText}>
-                  {narration.audioUrl ? "Drop to replace narration audio" : "Drop narration audio file here"}
+                  {activeNarrationAsset?.audioUrl
+                    ? "Drop to replace narration audio"
+                    : "Drop narration audio file here"}
                 </p>
               </div>
               <input
@@ -1389,26 +1456,31 @@ export default function Home() {
               />
               <div className={styles.actions}>
                 <button type="button" className={styles.smallButton} onClick={openNarrationFilePicker}>
-                  {narration.audioUrl ? "Replace narration" : "Upload narration"}
+                  {activeNarrationAsset?.audioUrl ? "Replace narration" : "Upload narration"}
                 </button>
-                {narration.audioUrl ? (
+                {activeNarrationAsset?.audioUrl ? (
                   <button type="button" className={styles.smallButton} onClick={clearNarrationAsset}>
                     Remove narration
                   </button>
                 ) : null}
               </div>
-              {narration.audioUrl ? (
-                <audio className={styles.narrationPlayer} controls src={narration.audioUrl} />
+              {activeNarrationAsset?.audioUrl ? (
+                <audio className={styles.narrationPlayer} controls src={activeNarrationAsset.audioUrl} />
               ) : null}
               <div className={styles.summaryGrid}>
-                <div className={styles.summaryItem}>File: {narration.fileName || "—"}</div>
-                <div className={styles.summaryItem}>MIME: {narration.mimeType || "—"}</div>
+                <div className={styles.summaryItem}>File: {activeNarrationAsset?.fileName || "—"}</div>
+                <div className={styles.summaryItem}>MIME: {activeNarrationAsset?.mimeType || "—"}</div>
                 <div className={styles.summaryItem}>
-                  Size: {typeof narration.fileSize === "number" ? formatFileSize(narration.fileSize) : "—"}
+                  Size:{" "}
+                  {typeof activeNarrationAsset?.fileSize === "number"
+                    ? formatFileSize(activeNarrationAsset.fileSize)
+                    : "—"}
                 </div>
                 <div className={styles.summaryItem}>
                   Duration:{" "}
-                  {typeof narration.duration === "number" ? formatDurationClock(narration.duration) : "—"}
+                  {typeof activeNarrationAsset?.duration === "number"
+                    ? formatDurationClock(activeNarrationAsset.duration)
+                    : "—"}
                 </div>
               </div>
             </>
@@ -1530,7 +1602,7 @@ export default function Home() {
                     void generateElevenLabsNarration();
                   }}
                 >
-                  {narration.provider === "elevenlabs" && narration.audioUrl
+                  {activeNarrationAsset?.provider === "elevenlabs" && activeNarrationAsset.audioUrl
                     ? narration.status === "loading"
                       ? "Regenerating..."
                       : "Regenerate narration"
@@ -1538,30 +1610,39 @@ export default function Home() {
                       ? "Generating..."
                       : "Generate narration"}
                 </button>
-                {narration.audioUrl ? (
+                {activeNarrationAsset?.audioUrl ? (
                   <button type="button" className={styles.button} onClick={clearNarrationAsset}>
                     Remove narration
                   </button>
                 ) : null}
               </div>
-              {narration.audioUrl ? (
-                <audio className={styles.narrationPlayer} controls src={narration.audioUrl} />
+              {activeNarrationAsset?.audioUrl ? (
+                <audio className={styles.narrationPlayer} controls src={activeNarrationAsset.audioUrl} />
               ) : (
                 <div className={styles.emptyState}>Generate narration from the full script to preview audio.</div>
               )}
               <div className={styles.summaryGrid}>
-                <div className={styles.summaryItem}>File: {narration.fileName || "—"}</div>
-                <div className={styles.summaryItem}>MIME: {narration.mimeType || "—"}</div>
+                <div className={styles.summaryItem}>File: {activeNarrationAsset?.fileName || "—"}</div>
+                <div className={styles.summaryItem}>MIME: {activeNarrationAsset?.mimeType || "—"}</div>
                 <div className={styles.summaryItem}>
-                  Size: {typeof narration.fileSize === "number" ? formatFileSize(narration.fileSize) : "—"}
+                  Size:{" "}
+                  {typeof activeNarrationAsset?.fileSize === "number"
+                    ? formatFileSize(activeNarrationAsset.fileSize)
+                    : "—"}
                 </div>
                 <div className={styles.summaryItem}>
                   Duration:{" "}
-                  {typeof narration.duration === "number" ? formatDurationClock(narration.duration) : "—"}
+                  {typeof activeNarrationAsset?.duration === "number"
+                    ? formatDurationClock(activeNarrationAsset.duration)
+                    : "—"}
                 </div>
-                <div className={styles.summaryItem}>Provider: {narration.provider || "—"}</div>
-                <div className={styles.summaryItem}>Voice ID: {narration.elevenLabs.voiceId || "—"}</div>
-                <div className={styles.summaryItem}>Model ID: {narration.elevenLabs.modelId || "—"}</div>
+                <div className={styles.summaryItem}>Provider: {activeNarrationAsset?.provider || "—"}</div>
+                <div className={styles.summaryItem}>
+                  Voice ID: {activeNarrationAsset?.voiceId || narration.elevenLabs.voiceId || "—"}
+                </div>
+                <div className={styles.summaryItem}>
+                  Model ID: {activeNarrationAsset?.modelId || narration.elevenLabs.modelId || "—"}
+                </div>
               </div>
             </>
           )}
@@ -1570,7 +1651,9 @@ export default function Home() {
               {narration.mode === "elevenlabs" ? "Generating narration..." : "Reading audio metadata..."}
             </p>
           ) : null}
-          {narration.audioUrl && narration.duration === undefined && narration.status === "done" ? (
+          {activeNarrationAsset?.audioUrl &&
+          activeNarrationAsset.duration === undefined &&
+          narration.status === "done" ? (
             <p className={styles.info}>Duration metadata is unavailable for this file.</p>
           ) : null}
           {narration.error ? (
