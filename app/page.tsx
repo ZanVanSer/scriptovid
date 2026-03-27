@@ -1417,39 +1417,6 @@ export default function Home() {
               {formatSeconds(durationDeltaSeconds)}
             </p>
           ) : null}
-          <div className={styles.renderSummary}>
-            <div className={styles.summaryGrid}>
-              <div className={styles.summaryItem}>Scenes: {renderProject.scenes.length}</div>
-              <div className={styles.summaryItem}>
-                Estimated Duration: {formatDurationClock(renderProject.totalEstimatedSceneDuration)}
-              </div>
-              <div className={styles.summaryItem}>
-                Final Duration: {formatDurationClock(renderProject.totalFinalSceneDuration)}
-              </div>
-              <div className={styles.summaryItem}>
-                Narration Duration:{" "}
-                {typeof renderProject.narrationDuration === "number"
-                  ? formatDurationClock(renderProject.narrationDuration)
-                  : "—"}
-              </div>
-              <div className={styles.summaryItem}>Timing Strategy: {renderProject.timingStrategy}</div>
-              <div className={styles.summaryItem}>Render Ready: {renderProject.isReady ? "Yes" : "No"}</div>
-            </div>
-            {renderProject.issues.length > 0 ? (
-              <ul className={styles.renderIssueList}>
-                {renderProject.issues.map((issue, issueIndex) => (
-                  <li
-                    key={`${issue.code}-${issueIndex}`}
-                    className={`${styles.renderIssueItem} ${
-                      issue.level === "error" ? styles.renderIssueError : styles.renderIssueWarning
-                    }`}
-                  >
-                    {issue.message}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
           {narration.mode === "manual" ? (
             <>
               <div
@@ -1702,6 +1669,47 @@ export default function Home() {
           {narration.error ? (
             <p className={styles.error}>Error: {narration.error}</p>
           ) : null}
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.sectionRow}>
+            <p className={styles.sectionTitle}>5. Render / Export</p>
+          </div>
+          <div className={styles.renderSummary}>
+            <div className={styles.summaryGrid}>
+              <div className={styles.summaryItem}>Scenes: {renderProject.scenes.length}</div>
+              <div className={styles.summaryItem}>
+                Estimated Duration: {formatDurationClock(renderProject.totalEstimatedSceneDuration)}
+              </div>
+              <div className={styles.summaryItem}>
+                Final Duration: {formatDurationClock(renderProject.totalFinalSceneDuration)}
+              </div>
+              <div className={styles.summaryItem}>
+                Narration Duration:{" "}
+                {typeof renderProject.narrationDuration === "number"
+                  ? formatDurationClock(renderProject.narrationDuration)
+                  : "—"}
+              </div>
+              <div className={styles.summaryItem}>Timing Strategy: {renderProject.timingStrategy}</div>
+              <div className={styles.summaryItem}>Render Ready: {renderProject.isReady ? "Yes" : "No"}</div>
+            </div>
+            {renderProject.issues.length > 0 ? (
+              <ul className={styles.renderIssueList}>
+                {renderProject.issues.map((issue, issueIndex) => (
+                  <li
+                    key={`${issue.code}-${issueIndex}`}
+                    className={`${styles.renderIssueItem} ${
+                      issue.level === "error" ? styles.renderIssueError : styles.renderIssueWarning
+                    }`}
+                  >
+                    {issue.message}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.info}>No render validation issues.</p>
+            )}
+          </div>
         </section>
 
         <section className={styles.panel}>

@@ -99,12 +99,18 @@ function normalizeSceneImage(image?: RenderProjectSceneImageInput): RenderImageA
 }
 
 function getMediaRefRenderabilityStatus(mediaRef: RenderMediaRef): "ok" | "warning" | "error" {
-  const value = mediaRef.value.trim();
+  const kind = (mediaRef as { kind?: string } | undefined)?.kind;
+  const value = (mediaRef as { value?: string } | undefined)?.value?.trim() || "";
+
+  if (kind !== "file-path" && kind !== "url") {
+    return "error";
+  }
+
   if (!value) {
     return "error";
   }
 
-  if (mediaRef.kind === "file-path") {
+  if (kind === "file-path") {
     if (value.startsWith("/") || /^[A-Za-z]:\\/.test(value)) {
       return "ok";
     }
@@ -140,9 +146,20 @@ export function validateRenderProject(renderProject: RenderProject): RenderProje
       );
     }
 
-    const imageRef = scene.image.mediaRef.value.trim();
-    if (!imageRef) {
-      issues.push(createIssue("MISSING_SCENE_IMAGE", `Scene ${scene.order} is missing an image.`, "error"));
+    const hasImageMediaRef =
+      scene.image &&
+      scene.image.mediaRef &&
+      typeof scene.image.mediaRef.kind === "string" &&
+      typeof scene.image.mediaRef.value === "string";
+
+    if (!hasImageMediaRef) {
+      issues.push(
+        createIssue(
+          "SCENE_IMAGE_MISSING",
+          `Scene ${scene.order} image media reference is missing.`,
+          "error",
+        ),
+      );
     } else {
       const mediaRefStatus = getMediaRefRenderabilityStatus(scene.image.mediaRef);
       if (mediaRefStatus !== "ok") {
@@ -160,11 +177,13 @@ export function validateRenderProject(renderProject: RenderProject): RenderProje
   if (!renderProject.narration) {
     issues.push(createIssue("MISSING_NARRATION", "Narration track is missing.", "error"));
   } else {
-    const narrationMediaRef = renderProject.narration.mediaRef.value.trim();
-    if (!narrationMediaRef) {
-      issues.push(
-        createIssue("MISSING_NARRATION_MEDIA_REF", "Narration media reference is missing.", "error"),
-      );
+    const hasNarrationMediaRef =
+      renderProject.narration.mediaRef &&
+      typeof renderProject.narration.mediaRef.kind === "string" &&
+      typeof renderProject.narration.mediaRef.value === "string";
+
+    if (!hasNarrationMediaRef) {
+      issues.push(createIssue("NARRATION_MEDIA_MISSING", "Narration media reference is missing.", "error"));
     } else {
       const mediaRefStatus = getMediaRefRenderabilityStatus(renderProject.narration.mediaRef);
       if (mediaRefStatus !== "ok") {
