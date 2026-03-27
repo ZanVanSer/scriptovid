@@ -275,6 +275,12 @@
   color: #b91c1c;
 }
 
+.modeNote {
+  margin: 0;
+  font-size: 12px;
+  color: #57534e;
+}
+
 .scenePreview {
   margin: 0;
   font-size: 14px;
@@ -285,6 +291,37 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   min-height: calc(1.45em * 4);
+}
+
+.promptDetails {
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+}
+
+.promptSummary {
+  font-size: 12px;
+  color: #57534e;
+  cursor: pointer;
+}
+
+.promptText {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #44403c;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.promptSource {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #57534e;
 }
 
 .emptyState {

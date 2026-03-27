@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_NANOBANANA_MODEL,
   NANOBANANA_MODELS,
-  generateNanobananaImage,
   type NanobananaModel,
 } from "@/modules/image-generation/nanobanana";
+import {
+  DEFAULT_VISUAL_STYLE_PRESET_ID,
+  VISUAL_STYLE_PRESETS,
+  buildSceneImagePrompt,
+  type VisualStylePresetId,
+} from "@/modules/image-generation/prompt-builder";
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
 import { detectSplitWarnings, validateScriptInput } from "@/modules/scene-splitter/input-quality";
@@ -66,10 +71,8 @@ export default function Home() {
   const sceneImagesRef = useRef<Record<number, SceneImageState>>({});
   const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("manual");
   const [nanobananaModel, setNanobananaModel] = useState<NanobananaModel>(DEFAULT_NANOBANANA_MODEL);
-  const [nanobananaApiKeyOverride, setNanobananaApiKeyOverride] = useState("");
-  const [nanobananaConfigError, setNanobananaConfigError] = useState<string | null>(null);
-  const [nanobananaGeneratingSceneIndex, setNanobananaGeneratingSceneIndex] = useState<number | null>(
-    null,
+  const [selectedVisualStyle, setSelectedVisualStyle] = useState<VisualStylePresetId>(
+    DEFAULT_VISUAL_STYLE_PRESET_ID,
   );
 
   useEffect(() => {
@@ -149,69 +152,6 @@ export default function Home() {
       };
     });
     clearSceneImageErrorsFor(sceneIndex);
-  }
-
-  function applySceneGeneratedImage(sceneIndex: number, objectUrl: string) {
-    setSceneImages((current) => {
-      const existing = current[sceneIndex];
-      if (existing) {
-        URL.revokeObjectURL(existing.objectUrl);
-      }
-
-      return {
-        ...current,
-        [sceneIndex]: {
-          label: `Generated · ${nanobananaModel}`,
-          objectUrl,
-          source: "nanobanana",
-        },
-      };
-    });
-    clearSceneImageErrorsFor(sceneIndex);
-  }
-
-  function resolveNanobananaApiKey() {
-    const overrideKey = nanobananaApiKeyOverride.trim();
-    if (overrideKey) {
-      return overrideKey;
-    }
-
-    return process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
-  }
-
-  async function generateSceneImageWithNanobanana(sceneIndex: number, prompt: string) {
-    setNanobananaConfigError(null);
-    setNanobananaGeneratingSceneIndex(sceneIndex);
-
-    const apiKey = resolveNanobananaApiKey();
-    if (!apiKey) {
-      setNanobananaGeneratingSceneIndex(null);
-      setNanobananaConfigError(
-        "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or enter a local override key.",
-      );
-      return;
-    }
-
-    try {
-      const generated = await generateNanobananaImage({
-        prompt,
-        model: nanobananaModel,
-        apiKey,
-      });
-      const response = await fetch(generated.imageUrl);
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      applySceneGeneratedImage(sceneIndex, objectUrl);
-    } catch (generationError) {
-      const message =
-        generationError instanceof Error ? generationError.message : "Image generation failed.";
-      setSceneImageErrors((current) => ({
-        ...current,
-        [sceneIndex]: message,
-      }));
-    } finally {
-      setNanobananaGeneratingSceneIndex(null);
-    }
   }
 
   function openSceneFilePicker(sceneIndex: number) {
@@ -306,6 +246,20 @@ export default function Home() {
     setScenePackResult(packed);
   }
 
+  const scenePrompts = useMemo(() => {
+    if (!scenePackResult) {
+      return {};
+    }
+
+    return scenePackResult.scenes.reduce<Record<number, string>>((acc, scene) => {
+      acc[scene.index] = buildSceneImagePrompt({
+        sceneText: scene.text,
+        style: selectedVisualStyle,
+      });
+      return acc;
+    }, {});
+  }, [scenePackResult, selectedVisualStyle]);
+
   return (
     <div className={styles.page}>
       <main className={styles.container}>
@@ -361,43 +315,44 @@ export default function Home() {
                 value={imageSourceMode}
                 onChange={(event) => {
                   setImageSourceMode(event.target.value as ImageSourceMode);
-                  setNanobananaConfigError(null);
+                  setActiveDropSceneIndex(null);
                 }}
               >
                 <option value="manual">Manual upload</option>
                 <option value="nanobanana">Nanobanana API</option>
               </select>
             </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Visual style preset</span>
+              <select
+                className={styles.selectInput}
+                value={selectedVisualStyle}
+                onChange={(event) => setSelectedVisualStyle(event.target.value as VisualStylePresetId)}
+              >
+                {VISUAL_STYLE_PRESETS.map((stylePreset) => (
+                  <option key={stylePreset.id} value={stylePreset.id}>
+                    {stylePreset.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             {imageSourceMode === "nanobanana" ? (
-              <>
-                <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Nanobanana model</span>
-                  <select
-                    className={styles.selectInput}
-                    value={nanobananaModel}
-                    onChange={(event) => setNanobananaModel(event.target.value as NanobananaModel)}
-                  >
-                    {NANOBANANA_MODELS.map((modelOption) => (
-                      <option key={modelOption} value={modelOption}>
-                        {modelOption}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Local API key override (optional)</span>
-                  <input
-                    type="password"
-                    className={styles.numberInput}
-                    value={nanobananaApiKeyOverride}
-                    onChange={(event) => setNanobananaApiKeyOverride(event.target.value)}
-                    placeholder="Use NEXT_PUBLIC_GEMINI_API_KEY if empty"
-                  />
-                </label>
-              </>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Nanobanana model</span>
+                <select
+                  className={styles.selectInput}
+                  value={nanobananaModel}
+                  onChange={(event) => setNanobananaModel(event.target.value as NanobananaModel)}
+                >
+                  {NANOBANANA_MODELS.map((modelOption) => (
+                    <option key={modelOption} value={modelOption}>
+                      {modelOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
           </div>
-          {nanobananaConfigError ? <p className={styles.error}>{nanobananaConfigError}</p> : null}
           <div className={styles.controlsGrid}>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Min scene duration (s)</span>
@@ -544,18 +499,6 @@ export default function Home() {
                     </>
                   ) : (
                     <div className={styles.cardActions}>
-                      <button
-                        type="button"
-                        className={styles.smallButton}
-                        onClick={() => generateSceneImageWithNanobanana(scene.index, scene.text)}
-                        disabled={nanobananaGeneratingSceneIndex === scene.index}
-                      >
-                        {nanobananaGeneratingSceneIndex === scene.index
-                          ? "Generating..."
-                          : sceneImages[scene.index]?.source === "nanobanana"
-                            ? "Regenerate"
-                            : "Generate"}
-                      </button>
                       {sceneImages[scene.index] ? (
                         <button
                           type="button"
@@ -565,6 +508,7 @@ export default function Home() {
                           Remove
                         </button>
                       ) : null}
+                      <p className={styles.modeNote}>Manual upload disabled in Nanobanana mode.</p>
                     </div>
                   )}
                   {sceneImages[scene.index] ? (
@@ -574,6 +518,11 @@ export default function Home() {
                     <p className={styles.inlineError}>{sceneImageErrors[scene.index]}</p>
                   ) : null}
                   <p className={styles.scenePreview}>{scene.text}</p>
+                  <details className={styles.promptDetails}>
+                    <summary className={styles.promptSummary}>Prompt preview</summary>
+                    <p className={styles.promptSource}>Scene text: {scene.text}</p>
+                    <p className={styles.promptText}>{scenePrompts[scene.index] || "Prompt unavailable."}</p>
+                  </details>
                 </li>
               ))}
             </ol>
