@@ -16,6 +16,10 @@ import type { SentenceSplitResponse } from "@/types/sentence";
 
 import styles from "./page.module.css";
 
+function formatSeconds(seconds: number) {
+  return `${seconds.toFixed(1)}s`;
+}
+
 export default function Home() {
   const [scriptText, setScriptText] = useState("");
   const [result, setResult] = useState<SentenceSplitResponse | null>(null);
@@ -120,8 +124,11 @@ export default function Home() {
     <div className={styles.page}>
       <main className={styles.container}>
         <section className={styles.panel}>
+          <div className={styles.sectionRow}>
+            <p className={styles.sectionTitle}>1. Script input</p>
+          </div>
           <label htmlFor="script-input" className={styles.label}>
-            Script Input
+            Paste script
           </label>
           <textarea
             id="script-input"
@@ -141,63 +148,24 @@ export default function Home() {
               onClick={handleSplit}
               disabled={isSplitting}
             >
-              {isSplitting ? "Splitting..." : "Split into sentences"}
+              {isSplitting ? "Splitting..." : "Split script"}
             </button>
           </div>
           {error ? <p className={styles.error}>{error}</p> : null}
           {inputFeedback ? <p className={styles.info}>{inputFeedback}</p> : null}
-          {splitWarnings.length > 0 ? (
-            <ul className={styles.warningList}>
-              {splitWarnings.map((warning) => (
-                <li key={warning} className={styles.warningItem}>
-                  {warning}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-
-        <section className={styles.panel}>
-          <details className={styles.previewDetails}>
-            <summary className={styles.previewSummary}>Normalized Text Preview</summary>
-            <pre className={styles.preview}>
-              {result?.normalizedText || "Run split to see normalized text."}
-            </pre>
-          </details>
         </section>
 
         <section className={styles.panel}>
           <div className={styles.sectionRow}>
-            <h2 className={styles.sectionTitle}>Sentences</h2>
-            <span className={styles.count}>Total sentences: {result?.sentenceCount ?? 0}</span>
+            <p className={styles.sectionTitle}>2. Scene review setup</p>
           </div>
-          <p className={styles.note}>
-            Duration estimate uses {DEFAULT_WORDS_PER_MINUTE} WPM.
-          </p>
           <div className={styles.summaryGrid}>
-            <div className={styles.summaryItem}>Total words: {result?.totalWordCount ?? 0}</div>
+            <div className={styles.summaryItem}>Sentences: {result?.sentenceCount ?? 0}</div>
+            <div className={styles.summaryItem}>Words: {result?.totalWordCount ?? 0}</div>
             <div className={styles.summaryItem}>
-              Total duration: {(result?.totalEstimatedDurationSeconds ?? 0).toFixed(1)}s
+              Narration estimate: {formatSeconds(result?.totalEstimatedDurationSeconds ?? 0)}
             </div>
-          </div>
-
-          <ol className={styles.list}>
-            {(result?.sentences ?? []).map((sentence) => (
-              <li key={sentence.index} className={styles.listItem}>
-                <div className={styles.listMeta}>#{sentence.index}</div>
-                <p className={styles.sentenceText}>{sentence.text}</p>
-                <div className={styles.listMeta}>Words: {sentence.wordCount}</div>
-                <div className={styles.listMeta}>
-                  Duration: {sentence.estimatedDurationSeconds.toFixed(1)}s
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className={styles.panel}>
-          <div className={styles.sectionRow}>
-            <h2 className={styles.sectionTitle}>Scene Packer</h2>
+            <div className={styles.summaryItem}>Timing baseline: {DEFAULT_WORDS_PER_MINUTE} WPM</div>
           </div>
           <div className={styles.controlsGrid}>
             <label className={styles.field}>
@@ -230,37 +198,91 @@ export default function Home() {
               onClick={handlePackScenes}
               disabled={!result || result.sentences.length === 0}
             >
-              Pack sentences into scenes
+              Build storyboard scenes
             </button>
           </div>
           {scenePackError ? <p className={styles.error}>{scenePackError}</p> : null}
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.sectionRow}>
+            <p className={styles.sectionTitle}>3. Storyboard review</p>
+            <span className={styles.count}>Scenes: {scenePackResult?.totalSceneCount ?? 0}</span>
+          </div>
           <div className={styles.summaryGrid}>
             <div className={styles.summaryItem}>
-              Total scenes: {scenePackResult?.totalSceneCount ?? 0}
-            </div>
-            <div className={styles.summaryItem}>
-              Total scene duration: {(scenePackResult?.totalEstimatedDurationSeconds ?? 0).toFixed(1)}
-              s
+              Total scene duration:{" "}
+              {formatSeconds(scenePackResult?.totalEstimatedDurationSeconds ?? 0)}
             </div>
           </div>
-          <ol className={styles.sceneList}>
-            {(scenePackResult?.scenes ?? []).map((scene) => (
-              <li key={scene.index} className={styles.listItem}>
-                <div className={styles.listMeta}>Scene {scene.index}</div>
-                <p className={styles.sentenceText}>{scene.text}</p>
-                <div className={styles.listMeta}>Duration: {scene.estimatedDurationSeconds.toFixed(1)}s</div>
-                <div className={styles.listMeta}>Words: {scene.totalWordCount}</div>
-                <div className={styles.listMeta}>Source units: {scene.sourceUnitCount}</div>
-                <div className={styles.listMeta}>Sentences: {scene.sentenceCount}</div>
-                <div className={styles.listMeta}>Sentence indexes: {scene.sentenceIndexRange}</div>
-                <div className={styles.listMeta}>Paragraph range: {scene.paragraphIndexRange}</div>
-                <div className={styles.listMeta}>
-                  Crosses paragraph boundary: {scene.crossesParagraphBoundary ? "yes" : "no"}
-                </div>
-                <div className={styles.listMeta}>Unit sources: {scene.unitSourceTypeSummary}</div>
-              </li>
-            ))}
-          </ol>
+          {scenePackResult && scenePackResult.scenes.length > 0 ? (
+            <ol className={styles.storyboardStrip}>
+              {scenePackResult.scenes.map((scene) => (
+                <li key={scene.index} className={styles.storyboardCard}>
+                  <div className={styles.cardHeader}>
+                    <p className={styles.cardTitle}>Scene {scene.index}</p>
+                    <p className={styles.cardMeta}>{formatSeconds(scene.estimatedDurationSeconds)}</p>
+                  </div>
+                  <div className={styles.imagePlaceholder}>Image placeholder</div>
+                  <p className={styles.scenePreview}>{scene.text}</p>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className={styles.emptyState}>Split script and build scenes to review storyboard cards.</div>
+          )}
+        </section>
+
+        <section className={styles.panel}>
+          <details className={styles.previewDetails}>
+            <summary className={styles.previewSummary}>Technical details</summary>
+            <div className={styles.debugStack}>
+              {splitWarnings.length > 0 ? (
+                <ul className={styles.warningList}>
+                  {splitWarnings.map((warning) => (
+                    <li key={warning} className={styles.warningItem}>
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={styles.info}>No split warnings.</p>
+              )}
+
+              <details className={styles.subDetails}>
+                <summary className={styles.subSummary}>Normalized text preview</summary>
+                <pre className={styles.preview}>
+                  {result?.normalizedText || "Run split to see normalized text."}
+                </pre>
+              </details>
+
+              <details className={styles.subDetails}>
+                <summary className={styles.subSummary}>Scene metadata</summary>
+                {scenePackResult && scenePackResult.scenes.length > 0 ? (
+                  <ol className={styles.debugList}>
+                    {scenePackResult.scenes.map((scene) => (
+                      <li key={scene.index} className={styles.debugItem}>
+                        <span className={styles.listMeta}>Scene {scene.index}</span>
+                        <span className={styles.listMeta}>Words: {scene.totalWordCount}</span>
+                        <span className={styles.listMeta}>Source units: {scene.sourceUnitCount}</span>
+                        <span className={styles.listMeta}>Sentences: {scene.sentenceCount}</span>
+                        <span className={styles.listMeta}>
+                          Sentence indexes: {scene.sentenceIndexRange}
+                        </span>
+                        <span className={styles.listMeta}>Paragraph range: {scene.paragraphIndexRange}</span>
+                        <span className={styles.listMeta}>
+                          Crosses paragraph boundary: {scene.crossesParagraphBoundary ? "yes" : "no"}
+                        </span>
+                        <span className={styles.listMeta}>Unit sources: {scene.unitSourceTypeSummary}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className={styles.info}>No scene metadata yet.</p>
+                )}
+              </details>
+            </div>
+          </details>
         </section>
       </main>
     </div>

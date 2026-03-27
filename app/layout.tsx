@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Script to Video - Phase 1.1",
-  description: "Local sentence splitting debug page using blingfire.",
+  title: "Script to Video - Phase 2.1",
+  description: "Local-first scene review with horizontal storyboard cards.",
 };
 
 export default function RootLayout({
