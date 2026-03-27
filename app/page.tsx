@@ -44,6 +44,15 @@ type SceneImageState = {
 
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const ACCEPTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+const ACCEPTED_AUDIO_TYPES = new Set([
+  "audio/mpeg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mp4",
+  "audio/aac",
+  "audio/ogg",
+]);
+const ACCEPTED_AUDIO_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".ogg"];
 type ImageSourceMode = "manual" | "nanobanana";
 type SceneGenerationStatus = "idle" | "loading" | "done" | "error";
 
@@ -60,6 +69,33 @@ function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
 }
 
+function formatDurationClock(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "—";
+  }
+
+  const totalSeconds = Math.round(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "—";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function isAllowedImageFile(file: File) {
   if (ACCEPTED_IMAGE_TYPES.has(file.type)) {
     return true;
@@ -67,6 +103,42 @@ function isAllowedImageFile(file: File) {
 
   const lowerName = file.name.toLowerCase();
   return ACCEPTED_IMAGE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+}
+
+function isAllowedAudioFile(file: File) {
+  if (ACCEPTED_AUDIO_TYPES.has(file.type)) {
+    return true;
+  }
+
+  const lowerName = file.name.toLowerCase();
+  return ACCEPTED_AUDIO_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+}
+
+function extractAudioDurationFromObjectUrl(objectUrl: string) {
+  return new Promise<number | undefined>((resolve) => {
+    const audio = document.createElement("audio");
+    let isSettled = false;
+
+    const settle = (duration?: number) => {
+      if (isSettled) {
+        return;
+      }
+      isSettled = true;
+      audio.removeAttribute("src");
+      audio.load();
+      resolve(duration);
+    };
+
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => {
+      const duration = Number.isFinite(audio.duration) ? audio.duration : undefined;
+      settle(duration);
+    };
+    audio.onerror = () => {
+      settle(undefined);
+    };
+    audio.src = objectUrl;
+  });
 }
 
 export default function Home() {
@@ -98,6 +170,9 @@ export default function Home() {
     {},
   );
   const [narration, setNarration] = useState<NarrationState>(createDefaultNarrationState);
+  const [isNarrationDropActive, setIsNarrationDropActive] = useState(false);
+  const narrationAudioUrlRef = useRef<string | undefined>(undefined);
+  const narrationUploadRequestRef = useRef(0);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{
     completed: number;
@@ -116,6 +191,91 @@ export default function Home() {
       });
     };
   }, []);
+
+  useEffect(() => {
+    narrationAudioUrlRef.current = narration.audioUrl;
+  }, [narration.audioUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (narrationAudioUrlRef.current) {
+        URL.revokeObjectURL(narrationAudioUrlRef.current);
+      }
+    };
+  }, []);
+
+  function clearNarrationManualFields() {
+    narrationUploadRequestRef.current += 1;
+    setNarration((current) => {
+      if (current.audioUrl) {
+        URL.revokeObjectURL(current.audioUrl);
+      }
+
+      return {
+        ...current,
+        mode: "manual",
+        status: "idle",
+        audioUrl: undefined,
+        fileName: undefined,
+        mimeType: undefined,
+        fileSize: undefined,
+        duration: undefined,
+        error: undefined,
+      };
+    });
+  }
+
+  async function applyManualNarrationFile(file: File) {
+    if (!isAllowedAudioFile(file)) {
+      setNarration((current) => ({
+        ...current,
+        status: "error",
+        error: "Please upload an MP3, WAV, M4A, AAC, or OGG audio file.",
+      }));
+      return;
+    }
+
+    const requestId = narrationUploadRequestRef.current + 1;
+    narrationUploadRequestRef.current = requestId;
+    const objectUrl = URL.createObjectURL(file);
+
+    setNarration((current) => ({
+      ...current,
+      mode: "manual",
+      status: "loading",
+      error: undefined,
+    }));
+
+    const duration = await extractAudioDurationFromObjectUrl(objectUrl);
+
+    if (narrationUploadRequestRef.current !== requestId) {
+      URL.revokeObjectURL(objectUrl);
+      return;
+    }
+
+    setNarration((current) => {
+      if (current.audioUrl) {
+        URL.revokeObjectURL(current.audioUrl);
+      }
+
+      return {
+        ...current,
+        mode: "manual",
+        status: "done",
+        audioUrl: objectUrl,
+        fileName: file.name,
+        mimeType: file.type || undefined,
+        fileSize: file.size,
+        duration,
+        error: undefined,
+      };
+    });
+  }
+
+  function openNarrationFilePicker() {
+    const input = document.getElementById("narration-upload") as HTMLInputElement | null;
+    input?.click();
+  }
 
   function clearSceneImageErrorsFor(sceneIndex: number) {
     setSceneImageErrors((current) => {
@@ -911,12 +1071,89 @@ export default function Home() {
           <div className={styles.summaryGrid}>
             <div className={styles.summaryItem}>Mode: {narration.mode}</div>
             <div className={styles.summaryItem}>Status: {narration.status}</div>
-            <div className={styles.summaryItem}>File: {narration.fileName || "—"}</div>
-            <div className={styles.summaryItem}>
-              Duration: {typeof narration.duration === "number" ? formatSeconds(narration.duration) : "—"}
-            </div>
           </div>
-          {narration.error ? <p className={styles.error}>Error: {narration.error}</p> : null}
+          {narration.mode === "manual" ? (
+            <>
+              <div
+                className={`${styles.narrationDropzone} ${
+                  isNarrationDropActive ? styles.narrationDropzoneActive : ""
+                }`}
+                onClick={openNarrationFilePicker}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setIsNarrationDropActive(true);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsNarrationDropActive(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  setIsNarrationDropActive(false);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsNarrationDropActive(false);
+                  const file = event.dataTransfer.files.item(0);
+                  if (file) {
+                    void applyManualNarrationFile(file);
+                  }
+                }}
+              >
+                <p className={styles.placeholderText}>
+                  {narration.audioUrl ? "Drop to replace narration audio" : "Drop narration audio file here"}
+                </p>
+              </div>
+              <input
+                id="narration-upload"
+                type="file"
+                accept=".mp3,.wav,.m4a,.aac,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg"
+                className={styles.fileInput}
+                onChange={(event) => {
+                  const file = event.target.files?.item(0);
+                  if (file) {
+                    void applyManualNarrationFile(file);
+                  }
+                  event.target.value = "";
+                }}
+              />
+              <div className={styles.actions}>
+                <button type="button" className={styles.smallButton} onClick={openNarrationFilePicker}>
+                  {narration.audioUrl ? "Replace narration" : "Upload narration"}
+                </button>
+                {narration.audioUrl ? (
+                  <button type="button" className={styles.smallButton} onClick={clearNarrationManualFields}>
+                    Remove narration
+                  </button>
+                ) : null}
+              </div>
+              {narration.audioUrl ? (
+                <audio className={styles.narrationPlayer} controls src={narration.audioUrl} />
+              ) : null}
+              <div className={styles.summaryGrid}>
+                <div className={styles.summaryItem}>File: {narration.fileName || "—"}</div>
+                <div className={styles.summaryItem}>MIME: {narration.mimeType || "—"}</div>
+                <div className={styles.summaryItem}>
+                  Size: {typeof narration.fileSize === "number" ? formatFileSize(narration.fileSize) : "—"}
+                </div>
+                <div className={styles.summaryItem}>
+                  Duration:{" "}
+                  {typeof narration.duration === "number" ? formatDurationClock(narration.duration) : "—"}
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className={styles.info}>ElevenLabs generation is not implemented in this phase.</p>
+          )}
+          {narration.status === "loading" ? (
+            <p className={styles.info}>Reading audio metadata...</p>
+          ) : null}
+          {narration.audioUrl && narration.duration === undefined && narration.status === "done" ? (
+            <p className={styles.info}>Duration metadata is unavailable for this file.</p>
+          ) : null}
+          {narration.error ? (
+            <p className={styles.error}>Error: {narration.error}</p>
+          ) : null}
         </section>
 
         <section className={styles.panel}>

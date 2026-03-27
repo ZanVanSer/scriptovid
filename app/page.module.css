@@ -373,6 +373,24 @@
   padding: 12px;
 }
 
+.narrationDropzone {
+  width: 100%;
+  border: 1px dashed #a8a29e;
+  border-radius: 8px;
+  background: #f5f5f4;
+  padding: 14px;
+  cursor: pointer;
+}
+
+.narrationDropzoneActive {
+  border-color: #78716c;
+  background: #f0ece8;
+}
+
+.narrationPlayer {
+  width: 100%;
+}
+
 .previewDetails {
   display: grid;
   gap: 10px;
