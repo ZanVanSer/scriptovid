@@ -2,32 +2,47 @@ export const VISUAL_STYLE_PRESETS = [
   {
     id: "cinematic-documentary",
     label: "Cinematic documentary",
-    visualDirection:
-      "grounded cinematic documentary photography with natural textures, believable lighting, and real-world detail",
+    medium: "cinematic documentary photography",
+    lighting: "natural directional light with soft contrast and believable highlights",
+    mood: "grounded, observant, and authentic",
+    composition: "story-first framing with clear subject focus and realistic spatial depth",
+    color: "earthy, restrained color grading with neutral tones",
   },
   {
     id: "realistic",
     label: "Realistic",
-    visualDirection:
-      "highly realistic visual storytelling with accurate materials, natural proportions, and true-to-life environments",
+    medium: "high-fidelity realistic image-making",
+    lighting: "balanced natural light with accurate shadow behavior",
+    mood: "clear, credible, and informative",
+    composition: "clean perspective with practical framing and physical realism",
+    color: "true-to-life colors with moderate contrast",
   },
   {
     id: "cartoon",
     label: "Cartoon",
-    visualDirection:
-      "clean cartoon illustration with expressive shapes, readable silhouettes, and polished color blocking",
+    medium: "clean cartoon illustration",
+    lighting: "soft stylized lighting with readable shape definition",
+    mood: "friendly, energetic, and approachable",
+    composition: "bold readable silhouettes and simplified visual hierarchy",
+    color: "controlled vibrant palette with clear color blocking",
   },
   {
     id: "dramatic",
     label: "Dramatic",
-    visualDirection:
-      "dramatic cinematic staging with strong contrast, purposeful mood lighting, and emotionally focused composition",
+    medium: "cinematic dramatic visual style",
+    lighting: "directional moody lighting with pronounced contrast and depth",
+    mood: "intense, emotional, and high-stakes",
+    composition: "deliberate cinematic framing that emphasizes tension and subject presence",
+    color: "deep tones with selective accents and richer shadows",
   },
   {
     id: "modern-explainer",
     label: "Modern explainer",
-    visualDirection:
-      "modern explainer-style visual design with clear subjects, simplified environments, and professional editorial clarity",
+    medium: "modern explainer visual design",
+    lighting: "clean studio-like lighting with minimal visual noise",
+    mood: "professional, concise, and confident",
+    composition: "structured composition optimized for clarity and quick understanding",
+    color: "balanced contemporary palette with clean separation between elements",
   },
 ] as const;
 
@@ -60,10 +75,11 @@ export function buildSceneImagePrompt({
 }): string {
   const normalizedSceneText = normalizeSceneText(sceneText);
   const preset = getStylePreset(style);
+  const styleDescription = `Use a ${preset.medium} look with ${preset.lighting}, a ${preset.mood} mood, ${preset.composition}, and ${preset.color}.`;
 
   if (!normalizedSceneText) {
-    return `Create a ${preset.visualDirection} scene. ${FIXED_STORYBOARD_RULES}`;
+    return `Create a scene for a narrated video. ${styleDescription} ${FIXED_STORYBOARD_RULES}`;
   }
 
-  return `Create a ${preset.visualDirection} scene that faithfully depicts this narrative moment: ${normalizedSceneText}. ${FIXED_STORYBOARD_RULES}`;
+  return `Create a scene that faithfully depicts this narrative moment: ${normalizedSceneText}. ${styleDescription} ${FIXED_STORYBOARD_RULES}`;
 }
