@@ -13,6 +13,7 @@ import type { ScenePackResult } from "@/types/scene";
 export type RenderProjectSceneImageInput = {
   label?: string;
   objectUrl?: string;
+  filePath?: string;
   source: "manual" | "nanobanana";
   mimeType?: string;
   width?: number;
@@ -83,7 +84,8 @@ function normalizeNarrationAsset(narration: NarrationState): RenderNarration | u
 }
 
 function normalizeSceneImage(image?: RenderProjectSceneImageInput): RenderImageAsset {
-  const mediaRef = normalizeMediaRef(image?.objectUrl, "url");
+  const mediaRef =
+    normalizeMediaRef(image?.filePath, "file-path") || normalizeMediaRef(image?.objectUrl, "url");
 
   return {
     source: image?.source === "manual" ? "manual" : "generated",
@@ -98,7 +100,7 @@ function normalizeSceneImage(image?: RenderProjectSceneImageInput): RenderImageA
   };
 }
 
-function getMediaRefRenderabilityStatus(mediaRef: RenderMediaRef): "ok" | "warning" | "error" {
+function getMediaRefRenderabilityStatus(mediaRef: RenderMediaRef): "ok" | "error" {
   const kind = (mediaRef as { kind?: string } | undefined)?.kind;
   const value = (mediaRef as { value?: string } | undefined)?.value?.trim() || "";
 
@@ -115,10 +117,6 @@ function getMediaRefRenderabilityStatus(mediaRef: RenderMediaRef): "ok" | "warni
       return "ok";
     }
     return "error";
-  }
-
-  if (value.startsWith("blob:") || value.startsWith("data:")) {
-    return "warning";
   }
 
   if (value.startsWith("/") || value.startsWith("http://") || value.startsWith("https://")) {
@@ -166,8 +164,8 @@ export function validateRenderProject(renderProject: RenderProject): RenderProje
         issues.push(
           createIssue(
             "MEDIA_NOT_RENDERABLE",
-            `Scene ${scene.order} image media reference is ${mediaRefStatus === "warning" ? "temporary" : "invalid"} for renderer input.`,
-            mediaRefStatus === "warning" ? "warning" : "error",
+            `Scene ${scene.order} image media reference is invalid for renderer input.`,
+            "error",
           ),
         );
       }
@@ -190,8 +188,8 @@ export function validateRenderProject(renderProject: RenderProject): RenderProje
         issues.push(
           createIssue(
             "MEDIA_NOT_RENDERABLE",
-            `Narration media reference is ${mediaRefStatus === "warning" ? "temporary" : "invalid"} for renderer input.`,
-            mediaRefStatus === "warning" ? "warning" : "error",
+            "Narration media reference is invalid for renderer input.",
+            "error",
           ),
         );
       }

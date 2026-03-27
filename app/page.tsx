@@ -40,6 +40,8 @@ import styles from "./page.module.css";
 type SceneImageState = {
   label: string;
   objectUrl: string;
+  filePath?: string;
+  mimeType?: string;
   source: "manual" | "nanobanana";
   generatedPrompt?: string;
   generatedModel?: string;
@@ -104,6 +106,51 @@ type ElevenLabsOptionsErrorResponse = {
   errorCode: string;
   message: string;
   details?: string;
+};
+
+type UploadImageSuccessResponse = {
+  success: true;
+  fileName: string;
+  filePath: string;
+  publicUrl: string;
+  mimeType: string;
+  fileSize: number;
+};
+
+type UploadImageErrorResponse = {
+  success: false;
+  errorCode: string;
+  message: string;
+};
+
+type UploadAudioSuccessResponse = {
+  success: true;
+  fileName: string;
+  filePath: string;
+  audioUrl: string;
+  mimeType: string;
+  fileSize: number;
+};
+
+type UploadAudioErrorResponse = {
+  success: false;
+  errorCode: string;
+  message: string;
+};
+
+type RenderPrototypeSuccessResponse = {
+  success: true;
+  outputPath: string;
+  outputUrl: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+};
+
+type RenderPrototypeErrorResponse = {
+  success: false;
+  errorCode: string;
+  message: string;
 };
 
 function formatSeconds(seconds: number) {
@@ -192,6 +239,12 @@ function revokeAudioObjectUrlIfNeeded(url?: string) {
   }
 }
 
+function revokeImageObjectUrlIfNeeded(url?: string) {
+  if (url && isObjectUrl(url)) {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export default function Home() {
   const [scriptText, setScriptText] = useState("");
   const [result, setResult] = useState<SentenceSplitResponse | null>(null);
@@ -235,6 +288,9 @@ export default function Home() {
     total: number;
     mode: BatchGenerationMode;
   } | null>(null);
+  const [renderStatus, setRenderStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [renderResult, setRenderResult] = useState<RenderPrototypeSuccessResponse | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -243,7 +299,7 @@ export default function Home() {
   useEffect(() => {
     return () => {
       Object.values(sceneImagesRef.current).forEach((entry) => {
-        URL.revokeObjectURL(entry.objectUrl);
+        revokeImageObjectUrlIfNeeded(entry.objectUrl);
       });
     };
   }, []);
@@ -273,6 +329,48 @@ export default function Home() {
     });
   }
 
+  async function uploadImageToLocalStorage(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/media/image", {
+      method: "POST",
+      body: formData,
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | UploadImageSuccessResponse
+      | UploadImageErrorResponse
+      | null;
+
+    if (!response.ok || !payload || !payload.success) {
+      const errorPayload = payload as UploadImageErrorResponse | null;
+      throw new Error(errorPayload?.message || "Image file could not be saved.");
+    }
+
+    return payload;
+  }
+
+  async function uploadAudioToLocalStorage(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/media/audio", {
+      method: "POST",
+      body: formData,
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | UploadAudioSuccessResponse
+      | UploadAudioErrorResponse
+      | null;
+
+    if (!response.ok || !payload || !payload.success) {
+      const errorPayload = payload as UploadAudioErrorResponse | null;
+      throw new Error(errorPayload?.message || "Audio file could not be saved.");
+    }
+
+    return payload;
+  }
+
   async function applyManualNarrationFile(file: File) {
     if (!isAllowedAudioFile(file)) {
       setNarration((current) => ({
@@ -285,8 +383,6 @@ export default function Home() {
 
     const requestId = narrationUploadRequestRef.current + 1;
     narrationUploadRequestRef.current = requestId;
-    const objectUrl = URL.createObjectURL(file);
-
     setNarration((current) => ({
       ...current,
       mode: "manual",
@@ -294,10 +390,27 @@ export default function Home() {
       error: undefined,
     }));
 
-    const duration = await extractAudioDurationFromAudioSource(objectUrl);
+    let uploaded: UploadAudioSuccessResponse;
+    try {
+      uploaded = await uploadAudioToLocalStorage(file);
+    } catch (uploadError) {
+      if (narrationUploadRequestRef.current !== requestId) {
+        return;
+      }
+
+      const message = uploadError instanceof Error ? uploadError.message : "Audio file could not be saved.";
+      setNarration((current) => ({
+        ...current,
+        mode: "manual",
+        status: "error",
+        error: message,
+      }));
+      return;
+    }
+
+    const duration = await extractAudioDurationFromAudioSource(uploaded.audioUrl);
 
     if (narrationUploadRequestRef.current !== requestId) {
-      revokeAudioObjectUrlIfNeeded(objectUrl);
       return;
     }
 
@@ -310,11 +423,11 @@ export default function Home() {
         status: "done",
         asset: {
           provider: "manual",
-          audioUrl: objectUrl,
-          filePath: undefined,
-          fileName: file.name,
-          mimeType: file.type || undefined,
-          fileSize: file.size,
+          audioUrl: uploaded.audioUrl,
+          filePath: uploaded.filePath,
+          fileName: uploaded.fileName,
+          mimeType: uploaded.mimeType || undefined,
+          fileSize: uploaded.fileSize,
           duration,
         },
         error: undefined,
@@ -560,7 +673,7 @@ export default function Home() {
   function clearAllSceneImages() {
     setSceneImages((current) => {
       Object.values(current).forEach((entry) => {
-        URL.revokeObjectURL(entry.objectUrl);
+        revokeImageObjectUrlIfNeeded(entry.objectUrl);
       });
       return {};
     });
@@ -578,7 +691,7 @@ export default function Home() {
         return current;
       }
 
-      URL.revokeObjectURL(existing.objectUrl);
+      revokeImageObjectUrlIfNeeded(existing.objectUrl);
       const next = { ...current };
       delete next[sceneIndex];
       return next;
@@ -596,7 +709,7 @@ export default function Home() {
     }));
   }
 
-  function applySceneImageFile(sceneIndex: number, file: File) {
+  async function applySceneImageFile(sceneIndex: number, file: File) {
     if (!isAllowedImageFile(file)) {
       setSceneImageErrors((current) => ({
         ...current,
@@ -605,19 +718,30 @@ export default function Home() {
       return;
     }
 
-    const objectUrl = URL.createObjectURL(file);
+    let uploaded: UploadImageSuccessResponse;
+    try {
+      uploaded = await uploadImageToLocalStorage(file);
+    } catch (uploadError) {
+      setSceneImageErrors((current) => ({
+        ...current,
+        [sceneIndex]: uploadError instanceof Error ? uploadError.message : "Image file could not be saved.",
+      }));
+      return;
+    }
 
     setSceneImages((current) => {
       const existing = current[sceneIndex];
       if (existing) {
-        URL.revokeObjectURL(existing.objectUrl);
+        revokeImageObjectUrlIfNeeded(existing.objectUrl);
       }
 
       return {
         ...current,
         [sceneIndex]: {
-          label: file.name,
-          objectUrl,
+          label: uploaded.fileName,
+          objectUrl: uploaded.publicUrl,
+          filePath: uploaded.filePath,
+          mimeType: uploaded.mimeType,
           source: "manual",
         },
       };
@@ -630,7 +754,7 @@ export default function Home() {
         usedPrompt: scenePrompts[sceneIndex] || current[sceneIndex]?.usedPrompt,
         usedModel: nanobananaModel,
         errorMessage: undefined,
-        imageUrl: objectUrl,
+        imageUrl: uploaded.publicUrl,
       },
     }));
   }
@@ -687,19 +811,24 @@ export default function Home() {
       });
 
       const blob = await fetch(result.imageUrl).then(async (response) => response.blob());
-      const objectUrl = URL.createObjectURL(blob);
+      const generatedFile = new File([blob], `scene-${sceneIndex}.png`, {
+        type: blob.type || "image/png",
+      });
+      const uploaded = await uploadImageToLocalStorage(generatedFile);
 
       setSceneImages((current) => {
         const existing = current[sceneIndex];
         if (existing) {
-          URL.revokeObjectURL(existing.objectUrl);
+          revokeImageObjectUrlIfNeeded(existing.objectUrl);
         }
 
         return {
           ...current,
           [sceneIndex]: {
             label: `Generated · ${nanobananaModel}`,
-            objectUrl,
+            objectUrl: uploaded.publicUrl,
+            filePath: uploaded.filePath,
+            mimeType: uploaded.mimeType,
             source: "nanobanana",
             generatedPrompt: prompt,
             generatedModel: nanobananaModel,
@@ -714,7 +843,7 @@ export default function Home() {
           usedPrompt: prompt,
           usedModel: nanobananaModel,
           errorMessage: undefined,
-          imageUrl: objectUrl,
+          imageUrl: uploaded.publicUrl,
         },
       }));
     } catch (generationError) {
@@ -1027,6 +1156,47 @@ export default function Home() {
     typeof result?.totalEstimatedDurationSeconds === "number"
       ? activeNarrationAsset.duration - result.totalEstimatedDurationSeconds
       : undefined;
+  const isRenderBusy = renderStatus === "loading";
+
+  async function handleRenderVideo() {
+    if (!renderProject.isReady || isRenderBusy) {
+      return;
+    }
+
+    setRenderStatus("loading");
+    setRenderError(null);
+    setRenderResult(null);
+
+    let response: Response;
+    try {
+      response = await fetch("/api/render/prototype", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ renderProject }),
+      });
+    } catch {
+      setRenderStatus("error");
+      setRenderError("Could not reach the local render route.");
+      return;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | RenderPrototypeSuccessResponse
+      | RenderPrototypeErrorResponse
+      | null;
+
+    if (!response.ok || !payload || !payload.success) {
+      const errorPayload = payload as RenderPrototypeErrorResponse | null;
+      setRenderStatus("error");
+      setRenderError(errorPayload?.message || "Rendering failed.");
+      return;
+    }
+
+    setRenderStatus("success");
+    setRenderResult(payload);
+  }
 
   return (
     <div className={styles.page}>
@@ -1256,7 +1426,7 @@ export default function Home() {
                       setActiveDropSceneIndex(null);
                       const file = event.dataTransfer.files.item(0);
                       if (file) {
-                        applySceneImageFile(scene.index, file);
+                        void applySceneImageFile(scene.index, file);
                       }
                     }}
                   >
@@ -1282,7 +1452,7 @@ export default function Home() {
                     onChange={(event) => {
                       const file = event.target.files?.item(0);
                       if (file) {
-                        applySceneImageFile(scene.index, file);
+                        void applySceneImageFile(scene.index, file);
                       }
                       event.target.value = "";
                     }}
@@ -1709,6 +1879,28 @@ export default function Home() {
             ) : (
               <p className={styles.info}>No render validation issues.</p>
             )}
+            <div className={styles.actions}>
+              <button
+                type="button"
+                className={styles.buttonPrimary}
+                onClick={() => {
+                  void handleRenderVideo();
+                }}
+                disabled={!renderProject.isReady || isRenderBusy}
+              >
+                {isRenderBusy ? "Rendering..." : "Render Video"}
+              </button>
+            </div>
+            {renderStatus === "success" && renderResult ? (
+              <div className={styles.summaryGrid}>
+                <div className={styles.summaryItem}>File: {renderResult.fileName}</div>
+                <div className={styles.summaryItem}>Size: {formatFileSize(renderResult.fileSize)}</div>
+                <a className={styles.smallButton} href={renderResult.outputUrl} download={renderResult.fileName}>
+                  Download MP4
+                </a>
+              </div>
+            ) : null}
+            {renderStatus === "error" && renderError ? <p className={styles.error}>{renderError}</p> : null}
           </div>
         </section>
 
