@@ -52,6 +52,7 @@ export type RenderProject = {
   narration?: RenderNarration;
   settings: RenderSettings;
   timingStrategy: "estimated" | "scale-to-narration";
+  scaleFactor?: number;
   totalEstimatedSceneDuration: number;
   totalFinalSceneDuration: number;
   narrationDuration?: number;

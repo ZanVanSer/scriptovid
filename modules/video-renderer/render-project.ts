@@ -25,6 +25,7 @@ export type RenderProjectAppState = {
   sceneImages: Record<number, RenderProjectSceneImageInput | undefined>;
   narration: NarrationState;
   settings?: Partial<RenderSettings>;
+  timingStrategy?: "estimated" | "scale-to-narration" | "auto";
 };
 
 function isPositiveDuration(value: number) {
@@ -130,8 +131,37 @@ function createIssue(code: string, message: string, level: RenderValidationIssue
   return { code, message, level };
 }
 
-export function validateRenderProject(renderProject: RenderProject): RenderProject {
-  const issues: RenderValidationIssue[] = [];
+function isFinitePositiveNumber(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function getLargeDurationMismatchIssue(
+  finalDuration: number,
+  narrationDuration?: number,
+): RenderValidationIssue | undefined {
+  if (!isFinitePositiveNumber(narrationDuration) || !isFinitePositiveNumber(finalDuration)) {
+    return undefined;
+  }
+
+  const normalizedNarrationDuration = narrationDuration as number;
+  const delta = Math.abs(finalDuration - normalizedNarrationDuration);
+  const mismatchRatio = delta / normalizedNarrationDuration;
+  if (mismatchRatio < 0.12) {
+    return undefined;
+  }
+
+  return createIssue(
+    "LARGE_DURATION_MISMATCH",
+    `Final video timing differs from narration by ${delta.toFixed(1)}s.`,
+    "warning",
+  );
+}
+
+export function validateRenderProject(
+  renderProject: RenderProject,
+  initialIssues: RenderValidationIssue[] = [],
+): RenderProject {
+  const issues: RenderValidationIssue[] = [...initialIssues];
 
   if (renderProject.scenes.length === 0) {
     issues.push(createIssue("MISSING_SCENES", "Render project has no scenes.", "error"));
@@ -205,11 +235,34 @@ export function validateRenderProject(renderProject: RenderProject): RenderProje
 
   if (
     !Number.isFinite(renderProject.totalEstimatedSceneDuration) ||
-    renderProject.totalEstimatedSceneDuration < 0 ||
+    renderProject.totalEstimatedSceneDuration <= 0 ||
     !Number.isFinite(renderProject.totalFinalSceneDuration) ||
-    renderProject.totalFinalSceneDuration < 0
+    renderProject.totalFinalSceneDuration <= 0
   ) {
     issues.push(createIssue("INVALID_DURATION", "Render project total durations are invalid.", "error"));
+  }
+
+  if (
+    renderProject.timingStrategy === "scale-to-narration" &&
+    (!isFinitePositiveNumber(renderProject.narrationDuration) ||
+      !isFinitePositiveNumber(renderProject.totalEstimatedSceneDuration) ||
+      !isFinitePositiveNumber(renderProject.scaleFactor))
+  ) {
+    issues.push(
+      createIssue(
+        "TIMING_RECONCILIATION_UNAVAILABLE",
+        "Scale-to-narration timing was requested but required duration values are missing or invalid.",
+        "warning",
+      ),
+    );
+  }
+
+  const largeMismatchIssue = getLargeDurationMismatchIssue(
+    renderProject.totalFinalSceneDuration,
+    renderProject.narrationDuration,
+  );
+  if (largeMismatchIssue) {
+    issues.push(largeMismatchIssue);
   }
 
   return {
@@ -220,7 +273,7 @@ export function validateRenderProject(renderProject: RenderProject): RenderProje
 }
 
 export function buildRenderProject(appState: RenderProjectAppState): RenderProject {
-  const scenes = (appState.scenePackResult?.scenes || []).map((scene, index) => ({
+  const estimatedScenes = (appState.scenePackResult?.scenes || []).map((scene, index) => ({
     id: String(scene.index),
     order: index + 1,
     text: scene.text,
@@ -235,20 +288,62 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
     ...appState.settings,
   };
 
-  const totalEstimatedSceneDuration = scenes.reduce((sum, scene) => sum + scene.estimatedDuration, 0);
+  const totalEstimatedSceneDuration = estimatedScenes.reduce((sum, scene) => sum + scene.estimatedDuration, 0);
+  const narrationDuration = narration?.duration;
+  const timingPreference = appState.timingStrategy || "auto";
+  const timingWarnings: RenderValidationIssue[] = [];
+
+  const canScaleToNarration =
+    isFinitePositiveNumber(narrationDuration) && isFinitePositiveNumber(totalEstimatedSceneDuration);
+
+  const resolvedTimingStrategy: "estimated" | "scale-to-narration" =
+    timingPreference === "estimated"
+      ? "estimated"
+      : timingPreference === "scale-to-narration"
+        ? canScaleToNarration
+          ? "scale-to-narration"
+          : "estimated"
+        : canScaleToNarration
+          ? "scale-to-narration"
+          : "estimated";
+
+  if (timingPreference === "scale-to-narration" && !canScaleToNarration) {
+    timingWarnings.push(
+      createIssue(
+        "TIMING_RECONCILIATION_UNAVAILABLE",
+        "Scale-to-narration timing was requested but narration or estimated duration is unavailable.",
+        "warning",
+      ),
+    );
+  }
+
+  const scaleFactor =
+    resolvedTimingStrategy === "scale-to-narration" && canScaleToNarration
+      ? (narrationDuration as number) / totalEstimatedSceneDuration
+      : undefined;
+
+  const scenes =
+    scaleFactor !== undefined
+      ? estimatedScenes.map((scene) => ({
+          ...scene,
+          finalDuration: scene.estimatedDuration * scaleFactor,
+        }))
+      : estimatedScenes;
+
   const totalFinalSceneDuration = scenes.reduce((sum, scene) => sum + scene.finalDuration, 0);
 
   const derivedProject: RenderProject = {
     scenes,
     narration,
     settings,
-    timingStrategy: "estimated",
+    timingStrategy: resolvedTimingStrategy,
+    scaleFactor,
     totalEstimatedSceneDuration,
     totalFinalSceneDuration,
-    narrationDuration: narration?.duration,
+    narrationDuration,
     isReady: false,
     issues: [],
   };
 
-  return validateRenderProject(derivedProject);
+  return validateRenderProject(derivedProject, timingWarnings);
 }

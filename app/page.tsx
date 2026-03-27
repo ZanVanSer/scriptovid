@@ -1917,6 +1917,9 @@ export default function Home() {
                   : "—"}
               </div>
               <div className={styles.summaryItem}>Timing Strategy: {renderProject.timingStrategy}</div>
+              <div className={styles.summaryItem}>
+                Scale Factor: {typeof renderProject.scaleFactor === "number" ? renderProject.scaleFactor.toFixed(3) : "—"}
+              </div>
               <div className={styles.summaryItem}>Render Ready: {renderProject.isReady ? "Yes" : "No"}</div>
             </div>
             {renderProject.issues.length > 0 ? (
