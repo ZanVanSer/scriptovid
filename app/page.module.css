@@ -269,6 +269,45 @@
   text-overflow: ellipsis;
 }
 
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.statusPill {
+  font-size: 11px;
+  line-height: 1;
+  border: 1px solid #d6d3d1;
+  border-radius: 8px;
+  padding: 3px 6px;
+  text-transform: lowercase;
+}
+
+.statusIdle {
+  color: #57534e;
+  background: #f5f5f4;
+}
+
+.statusLoading {
+  color: #9a3412;
+  background: #ffedd5;
+  border-color: #fdba74;
+}
+
+.statusDone {
+  color: #14532d;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.statusError {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
 .inlineError {
   margin: 0;
   font-size: 12px;

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Script to Video - Phase 2.4.3",
-  description: "Single-scene Gemini image generation in Nanobanana mode.",
+  title: "Script to Video - Phase 2.4.4",
+  description: "Sequential batch Gemini image generation with per-scene states.",
 };
 
 export default function RootLayout({

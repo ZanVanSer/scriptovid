@@ -47,6 +47,7 @@ type SceneGenerationState = {
   errorMessage?: string;
   usedPrompt?: string;
   usedModel?: NanobananaModel;
+  imageUrl?: string;
 };
 
 function formatSeconds(seconds: number) {
@@ -90,6 +91,8 @@ export default function Home() {
   const [sceneGenerationStates, setSceneGenerationStates] = useState<Record<number, SceneGenerationState>>(
     {},
   );
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -125,6 +128,8 @@ export default function Home() {
     setSceneImageErrors({});
     setActiveDropSceneIndex(null);
     setSceneGenerationStates({});
+    setIsBatchGenerating(false);
+    setBatchProgress(null);
   }
 
   function removeSceneImage(sceneIndex: number) {
@@ -144,6 +149,7 @@ export default function Home() {
       ...current,
       [sceneIndex]: {
         status: "idle",
+        imageUrl: undefined,
       },
     }));
   }
@@ -179,6 +185,7 @@ export default function Home() {
       ...current,
       [sceneIndex]: {
         status: "done",
+        imageUrl: objectUrl,
       },
     }));
   }
@@ -192,8 +199,8 @@ export default function Home() {
     return process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
   }
 
-  async function generateSceneImage(sceneIndex: number, prompt: string) {
-    const apiKey = resolveNanobananaApiKey();
+  async function generateSceneImage(sceneIndex: number, prompt: string, forcedApiKey?: string) {
+    const apiKey = forcedApiKey || resolveNanobananaApiKey();
     if (!apiKey) {
       const message =
         "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or provide a local override key.";
@@ -204,6 +211,7 @@ export default function Home() {
           errorMessage: message,
           usedPrompt: prompt,
           usedModel: nanobananaModel,
+          imageUrl: undefined,
         },
       }));
       setSceneImageErrors((current) => ({
@@ -219,6 +227,8 @@ export default function Home() {
         status: "loading",
         usedPrompt: prompt,
         usedModel: nanobananaModel,
+        errorMessage: undefined,
+        imageUrl: sceneImages[sceneIndex]?.objectUrl,
       },
     }));
     clearSceneImageErrorsFor(sceneIndex);
@@ -258,6 +268,8 @@ export default function Home() {
           status: "done",
           usedPrompt: prompt,
           usedModel: nanobananaModel,
+          errorMessage: undefined,
+          imageUrl: objectUrl,
         },
       }));
     } catch (generationError) {
@@ -275,6 +287,7 @@ export default function Home() {
           errorMessage: message,
           usedPrompt: prompt,
           usedModel: nanobananaModel,
+          imageUrl: undefined,
         },
       }));
       setSceneImageErrors((current) => ({
@@ -282,6 +295,54 @@ export default function Home() {
         [sceneIndex]: message,
       }));
     }
+  }
+
+  async function handleGenerateAllImages() {
+    if (!scenePackResult || scenePackResult.scenes.length === 0) {
+      return;
+    }
+
+    const apiKey = resolveNanobananaApiKey();
+    if (!apiKey) {
+      const message =
+        "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or provide a local override key.";
+      setSceneGenerationStates((current) => {
+        const next = { ...current };
+        scenePackResult.scenes.forEach((scene) => {
+          next[scene.index] = {
+            status: "error",
+            errorMessage: message,
+            usedPrompt: scenePrompts[scene.index] || scene.text,
+            usedModel: nanobananaModel,
+            imageUrl: undefined,
+          };
+        });
+        return next;
+      });
+      setSceneImageErrors((current) => {
+        const next = { ...current };
+        scenePackResult.scenes.forEach((scene) => {
+          next[scene.index] = message;
+        });
+        return next;
+      });
+      return;
+    }
+
+    setIsBatchGenerating(true);
+    setBatchProgress({ completed: 0, total: scenePackResult.scenes.length });
+
+    for (let index = 0; index < scenePackResult.scenes.length; index += 1) {
+      const scene = scenePackResult.scenes[index];
+      const prompt = scenePrompts[scene.index] || scene.text;
+      await generateSceneImage(scene.index, prompt, apiKey);
+      setBatchProgress({
+        completed: index + 1,
+        total: scenePackResult.scenes.length,
+      });
+    }
+
+    setIsBatchGenerating(false);
   }
 
   function openSceneFilePicker(sceneIndex: number) {
@@ -393,6 +454,27 @@ export default function Home() {
   function getSceneGenerationStatus(sceneIndex: number): SceneGenerationState {
     return sceneGenerationStates[sceneIndex] || { status: "idle" };
   }
+
+  const generationSummary = useMemo(() => {
+    if (!scenePackResult) {
+      return { done: 0, error: 0, loading: 0 };
+    }
+
+    return scenePackResult.scenes.reduce(
+      (acc, scene) => {
+        const status = getSceneGenerationStatus(scene.index).status;
+        if (status === "done") {
+          acc.done += 1;
+        } else if (status === "error") {
+          acc.error += 1;
+        } else if (status === "loading") {
+          acc.loading += 1;
+        }
+        return acc;
+      },
+      { done: 0, error: 0, loading: 0 },
+    );
+  }, [scenePackResult, sceneGenerationStates]);
 
   return (
     <div className={styles.page}>
@@ -546,7 +628,28 @@ export default function Home() {
               Total scene duration:{" "}
               {formatSeconds(scenePackResult?.totalEstimatedDurationSeconds ?? 0)}
             </div>
+            {imageSourceMode === "nanobanana" ? (
+              <>
+                <div className={styles.summaryItem}>Done: {generationSummary.done}</div>
+                <div className={styles.summaryItem}>Errors: {generationSummary.error}</div>
+                <div className={styles.summaryItem}>Loading: {generationSummary.loading}</div>
+              </>
+            ) : null}
           </div>
+          {imageSourceMode === "nanobanana" ? (
+            <div className={styles.actions}>
+              <button
+                type="button"
+                className={styles.buttonPrimary}
+                onClick={handleGenerateAllImages}
+                disabled={!scenePackResult || scenePackResult.scenes.length === 0 || isBatchGenerating}
+              >
+                {isBatchGenerating && batchProgress
+                  ? `Generating ${batchProgress.completed}/${batchProgress.total}...`
+                  : "Generate all images"}
+              </button>
+            </div>
+          ) : null}
           {scenePackResult && scenePackResult.scenes.length > 0 ? (
             <ol className={styles.storyboardStrip}>
               {scenePackResult.scenes.map((scene) => (
@@ -648,14 +751,16 @@ export default function Home() {
                       <button
                         type="button"
                         className={styles.smallButton}
-                        disabled={getSceneGenerationStatus(scene.index).status === "loading"}
+                        disabled={
+                          getSceneGenerationStatus(scene.index).status === "loading" || isBatchGenerating
+                        }
                         onClick={() => generateSceneImage(scene.index, scenePrompts[scene.index] || scene.text)}
                       >
                         {getSceneGenerationStatus(scene.index).status === "loading"
                           ? "Generating..."
                           : "Generate image"}
                       </button>
-                      {sceneImages[scene.index]?.source === "nanobanana" ? (
+                      {sceneImages[scene.index] ? (
                         <button
                           type="button"
                           className={styles.smallButton}
@@ -671,12 +776,26 @@ export default function Home() {
                     <p className={styles.fileMeta}>{sceneImages[scene.index].label}</p>
                   ) : null}
                   {imageSourceMode === "nanobanana" ? (
-                    <p className={styles.fileMeta}>
-                      Status: {getSceneGenerationStatus(scene.index).status}
-                      {getSceneGenerationStatus(scene.index).usedModel
-                        ? ` · Model: ${getSceneGenerationStatus(scene.index).usedModel}`
-                        : ""}
-                    </p>
+                    <div className={styles.statusRow}>
+                      <span
+                        className={`${styles.statusPill} ${
+                          getSceneGenerationStatus(scene.index).status === "done"
+                            ? styles.statusDone
+                            : getSceneGenerationStatus(scene.index).status === "error"
+                              ? styles.statusError
+                              : getSceneGenerationStatus(scene.index).status === "loading"
+                                ? styles.statusLoading
+                                : styles.statusIdle
+                        }`}
+                      >
+                        {getSceneGenerationStatus(scene.index).status}
+                      </span>
+                      <span className={styles.fileMeta}>
+                        {getSceneGenerationStatus(scene.index).usedModel
+                          ? `Model: ${getSceneGenerationStatus(scene.index).usedModel}`
+                          : `Model: ${nanobananaModel}`}
+                      </span>
+                    </div>
                   ) : null}
                   {sceneImageErrors[scene.index] ? (
                     <p className={styles.inlineError}>{sceneImageErrors[scene.index]}</p>
@@ -689,6 +808,11 @@ export default function Home() {
                     {getSceneGenerationStatus(scene.index).usedPrompt ? (
                       <p className={styles.promptSource}>
                         Last generated prompt: {getSceneGenerationStatus(scene.index).usedPrompt}
+                      </p>
+                    ) : null}
+                    {getSceneGenerationStatus(scene.index).errorMessage ? (
+                      <p className={styles.promptSource}>
+                        Last error: {getSceneGenerationStatus(scene.index).errorMessage}
                       </p>
                     ) : null}
                   </details>
