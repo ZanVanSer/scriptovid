@@ -114,6 +114,11 @@
   gap: 10px;
 }
 
+.modeControls {
+  display: grid;
+  gap: 10px;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -125,6 +130,17 @@
 }
 
 .numberInput {
+  width: 100%;
+  height: 36px;
+  border: 1px solid #d6d3d1;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: #292524;
+  background: #ffffff;
+}
+
+.selectInput {
   width: 100%;
   height: 36px;
   border: 1px solid #d6d3d1;
@@ -188,6 +204,9 @@
   place-items: center;
   font-size: 13px;
   color: #57534e;
+}
+
+.imagePlaceholderClickable {
   cursor: pointer;
 }
 
@@ -230,6 +249,11 @@
   font-size: 12px;
   line-height: 1;
   text-decoration: none;
+}
+
+.smallButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .fileInput {

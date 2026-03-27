@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import {
+  DEFAULT_NANOBANANA_MODEL,
+  NANOBANANA_MODELS,
+  generateNanobananaImage,
+  type NanobananaModel,
+} from "@/modules/image-generation/nanobanana";
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
 import { detectSplitWarnings, validateScriptInput } from "@/modules/scene-splitter/input-quality";
@@ -17,12 +23,14 @@ import type { SentenceSplitResponse } from "@/types/sentence";
 import styles from "./page.module.css";
 
 type SceneImageState = {
-  fileName: string;
+  label: string;
   objectUrl: string;
+  source: "manual" | "nanobanana";
 };
 
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const ACCEPTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+type ImageSourceMode = "manual" | "nanobanana";
 
 function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
@@ -56,6 +64,13 @@ export default function Home() {
   const [sceneImageErrors, setSceneImageErrors] = useState<Record<number, string>>({});
   const [activeDropSceneIndex, setActiveDropSceneIndex] = useState<number | null>(null);
   const sceneImagesRef = useRef<Record<number, SceneImageState>>({});
+  const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("manual");
+  const [nanobananaModel, setNanobananaModel] = useState<NanobananaModel>(DEFAULT_NANOBANANA_MODEL);
+  const [nanobananaApiKeyOverride, setNanobananaApiKeyOverride] = useState("");
+  const [nanobananaConfigError, setNanobananaConfigError] = useState<string | null>(null);
+  const [nanobananaGeneratingSceneIndex, setNanobananaGeneratingSceneIndex] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -127,12 +142,76 @@ export default function Home() {
       return {
         ...current,
         [sceneIndex]: {
-          fileName: file.name,
+          label: file.name,
           objectUrl,
+          source: "manual",
         },
       };
     });
     clearSceneImageErrorsFor(sceneIndex);
+  }
+
+  function applySceneGeneratedImage(sceneIndex: number, objectUrl: string) {
+    setSceneImages((current) => {
+      const existing = current[sceneIndex];
+      if (existing) {
+        URL.revokeObjectURL(existing.objectUrl);
+      }
+
+      return {
+        ...current,
+        [sceneIndex]: {
+          label: `Generated · ${nanobananaModel}`,
+          objectUrl,
+          source: "nanobanana",
+        },
+      };
+    });
+    clearSceneImageErrorsFor(sceneIndex);
+  }
+
+  function resolveNanobananaApiKey() {
+    const overrideKey = nanobananaApiKeyOverride.trim();
+    if (overrideKey) {
+      return overrideKey;
+    }
+
+    return process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  }
+
+  async function generateSceneImageWithNanobanana(sceneIndex: number, prompt: string) {
+    setNanobananaConfigError(null);
+    setNanobananaGeneratingSceneIndex(sceneIndex);
+
+    const apiKey = resolveNanobananaApiKey();
+    if (!apiKey) {
+      setNanobananaGeneratingSceneIndex(null);
+      setNanobananaConfigError(
+        "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or enter a local override key.",
+      );
+      return;
+    }
+
+    try {
+      const generated = await generateNanobananaImage({
+        prompt,
+        model: nanobananaModel,
+        apiKey,
+      });
+      const response = await fetch(generated.imageUrl);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      applySceneGeneratedImage(sceneIndex, objectUrl);
+    } catch (generationError) {
+      const message =
+        generationError instanceof Error ? generationError.message : "Image generation failed.";
+      setSceneImageErrors((current) => ({
+        ...current,
+        [sceneIndex]: message,
+      }));
+    } finally {
+      setNanobananaGeneratingSceneIndex(null);
+    }
   }
 
   function openSceneFilePicker(sceneIndex: number) {
@@ -274,6 +353,51 @@ export default function Home() {
             </div>
             <div className={styles.summaryItem}>Timing baseline: {DEFAULT_WORDS_PER_MINUTE} WPM</div>
           </div>
+          <div className={styles.modeControls}>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Image source mode</span>
+              <select
+                className={styles.selectInput}
+                value={imageSourceMode}
+                onChange={(event) => {
+                  setImageSourceMode(event.target.value as ImageSourceMode);
+                  setNanobananaConfigError(null);
+                }}
+              >
+                <option value="manual">Manual upload</option>
+                <option value="nanobanana">Nanobanana API</option>
+              </select>
+            </label>
+            {imageSourceMode === "nanobanana" ? (
+              <>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Nanobanana model</span>
+                  <select
+                    className={styles.selectInput}
+                    value={nanobananaModel}
+                    onChange={(event) => setNanobananaModel(event.target.value as NanobananaModel)}
+                  >
+                    {NANOBANANA_MODELS.map((modelOption) => (
+                      <option key={modelOption} value={modelOption}>
+                        {modelOption}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Local API key override (optional)</span>
+                  <input
+                    type="password"
+                    className={styles.numberInput}
+                    value={nanobananaApiKeyOverride}
+                    onChange={(event) => setNanobananaApiKeyOverride(event.target.value)}
+                    placeholder="Use NEXT_PUBLIC_GEMINI_API_KEY if empty"
+                  />
+                </label>
+              </>
+            ) : null}
+          </div>
+          {nanobananaConfigError ? <p className={styles.error}>{nanobananaConfigError}</p> : null}
           <div className={styles.controlsGrid}>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Min scene duration (s)</span>
@@ -333,23 +457,39 @@ export default function Home() {
                   <div
                     className={`${styles.imagePlaceholder} ${
                       activeDropSceneIndex === scene.index ? styles.imagePlaceholderActive : ""
-                    }`}
-                    onClick={() => openSceneFilePicker(scene.index)}
+                    } ${imageSourceMode === "manual" ? styles.imagePlaceholderClickable : ""}`}
+                    onClick={() => {
+                      if (imageSourceMode === "manual") {
+                        openSceneFilePicker(scene.index);
+                      }
+                    }}
                     onDragEnter={(event) => {
+                      if (imageSourceMode !== "manual") {
+                        return;
+                      }
                       event.preventDefault();
                       setActiveDropSceneIndex(scene.index);
                     }}
                     onDragOver={(event) => {
+                      if (imageSourceMode !== "manual") {
+                        return;
+                      }
                       event.preventDefault();
                       setActiveDropSceneIndex(scene.index);
                     }}
                     onDragLeave={(event) => {
+                      if (imageSourceMode !== "manual") {
+                        return;
+                      }
                       event.preventDefault();
                       if (activeDropSceneIndex === scene.index) {
                         setActiveDropSceneIndex(null);
                       }
                     }}
                     onDrop={(event) => {
+                      if (imageSourceMode !== "manual") {
+                        return;
+                      }
                       event.preventDefault();
                       setActiveDropSceneIndex(null);
                       const file = event.dataTransfer.files.item(0);
@@ -365,38 +505,70 @@ export default function Home() {
                         className={styles.sceneImage}
                       />
                     ) : (
-                      <p className={styles.placeholderText}>Image placeholder</p>
+                      <p className={styles.placeholderText}>
+                        {imageSourceMode === "manual"
+                          ? "Image placeholder"
+                          : "Generated image placeholder"}
+                      </p>
                     )}
                   </div>
-                  <input
-                    id={`scene-upload-${scene.index}`}
-                    type="file"
-                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
-                    className={styles.fileInput}
-                    onChange={(event) => {
-                      const file = event.target.files?.item(0);
-                      if (file) {
-                        applySceneImageFile(scene.index, file);
-                      }
-                      event.target.value = "";
-                    }}
-                  />
-                  <div className={styles.cardActions}>
-                    <label htmlFor={`scene-upload-${scene.index}`} className={styles.smallButton}>
-                      {sceneImages[scene.index] ? "Replace" : "Upload"}
-                    </label>
-                    {sceneImages[scene.index] ? (
+                  {imageSourceMode === "manual" ? (
+                    <>
+                      <input
+                        id={`scene-upload-${scene.index}`}
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                        className={styles.fileInput}
+                        onChange={(event) => {
+                          const file = event.target.files?.item(0);
+                          if (file) {
+                            applySceneImageFile(scene.index, file);
+                          }
+                          event.target.value = "";
+                        }}
+                      />
+                      <div className={styles.cardActions}>
+                        <label htmlFor={`scene-upload-${scene.index}`} className={styles.smallButton}>
+                          {sceneImages[scene.index] ? "Replace" : "Upload"}
+                        </label>
+                        {sceneImages[scene.index] ? (
+                          <button
+                            type="button"
+                            className={styles.smallButton}
+                            onClick={() => removeSceneImage(scene.index)}
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <div className={styles.cardActions}>
                       <button
                         type="button"
                         className={styles.smallButton}
-                        onClick={() => removeSceneImage(scene.index)}
+                        onClick={() => generateSceneImageWithNanobanana(scene.index, scene.text)}
+                        disabled={nanobananaGeneratingSceneIndex === scene.index}
                       >
-                        Remove
+                        {nanobananaGeneratingSceneIndex === scene.index
+                          ? "Generating..."
+                          : sceneImages[scene.index]?.source === "nanobanana"
+                            ? "Regenerate"
+                            : "Generate"}
                       </button>
-                    ) : null}
-                  </div>
+                      {sceneImages[scene.index] ? (
+                        <button
+                          type="button"
+                          className={styles.smallButton}
+                          onClick={() => removeSceneImage(scene.index)}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
                   {sceneImages[scene.index] ? (
-                    <p className={styles.fileMeta}>{sceneImages[scene.index].fileName}</p>
+                    <p className={styles.fileMeta}>{sceneImages[scene.index].label}</p>
                   ) : null}
                   {sceneImageErrors[scene.index] ? (
                     <p className={styles.inlineError}>{sceneImageErrors[scene.index]}</p>
