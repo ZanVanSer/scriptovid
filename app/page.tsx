@@ -155,8 +155,6 @@ type RenderPrototypeErrorResponse = {
   message: string;
 };
 
-type RenderMode = "ffmpeg" | "remotion-test";
-
 type SceneMotionDebugRow = {
   order: number;
   motionPreset: string;
@@ -1199,17 +1197,16 @@ export default function Home() {
       : undefined;
   const isRenderBusy = renderStatus === "loading";
 
-  async function handleRenderVideo(mode: RenderMode = "ffmpeg") {
+  async function handleRenderVideo() {
     if (isRenderBusy) {
       return;
     }
 
-    const renderProjectForRequest =
-      mode === "ffmpeg"
-        ? buildRenderProjectFromCurrentState(`${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
-        : buildRenderProjectFromCurrentState();
+    const renderProjectForRequest = buildRenderProjectFromCurrentState(
+      `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    );
 
-    if (mode === "ffmpeg" && !renderProjectForRequest.isReady) {
+    if (!renderProjectForRequest.isReady) {
       setRenderStatus("error");
       setRenderError("Render project is not ready.");
       setRenderResult(null);
@@ -1222,16 +1219,12 @@ export default function Home() {
       return;
     }
 
-    if (mode === "ffmpeg") {
-      setLastRenderMotionAssignments(
-        renderProjectForRequest.scenes.map((scene) => ({
-          order: scene.order,
-          motionPreset: scene.motionPreset || "static",
-        })),
-      );
-    } else {
-      setLastRenderMotionAssignments([]);
-    }
+    setLastRenderMotionAssignments(
+      renderProjectForRequest.scenes.map((scene) => ({
+        order: scene.order,
+        motionPreset: scene.motionPreset || "static",
+      })),
+    );
     setRenderStatus("loading");
     setRenderError(null);
     setRenderResult(null);
@@ -1243,18 +1236,11 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          mode,
-          renderProject: mode === "ffmpeg" ? renderProjectForRequest : undefined,
-        }),
+        body: JSON.stringify({ renderProject: renderProjectForRequest }),
       });
     } catch {
       setRenderStatus("error");
-      setRenderError(
-        mode === "remotion-test"
-          ? "Could not reach the local render route for Remotion test rendering."
-          : "Could not reach the local render route.",
-      );
+      setRenderError("Could not reach the local render route.");
       return;
     }
 
@@ -2061,21 +2047,11 @@ export default function Home() {
                 type="button"
                 className={styles.buttonPrimary}
                 onClick={() => {
-                  void handleRenderVideo("ffmpeg");
+                  void handleRenderVideo();
                 }}
                 disabled={!renderProject.isReady || isRenderBusy}
               >
                 {isRenderBusy ? "Rendering..." : "Render Video"}
-              </button>
-              <button
-                type="button"
-                className={styles.smallButton}
-                onClick={() => {
-                  void handleRenderVideo("remotion-test");
-                }}
-                disabled={isRenderBusy}
-              >
-                {isRenderBusy ? "Rendering..." : "Remotion Test Render"}
               </button>
               <button
                 type="button"

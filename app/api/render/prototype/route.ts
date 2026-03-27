@@ -1,19 +1,27 @@
 import { NextResponse } from "next/server";
 
-import { renderTestVideo } from "@/lib/render/remotionRenderer";
-import {
-  RenderVideoError,
-  renderVideoFromProject,
-  type RenderVideoErrorResult,
-  type RenderVideoSuccessResult,
-} from "@/modules/video-renderer/render-video";
+import { renderVideoWithRemotion } from "@/lib/render/remotionRenderer";
 import type { RenderProject } from "@/types/render-project";
 
 export const runtime = "nodejs";
 
 type RenderPrototypeRequest = {
   renderProject?: RenderProject;
-  mode?: "ffmpeg" | "remotion-test";
+};
+
+type RenderPrototypeSuccessResult = {
+  success: true;
+  outputPath: string;
+  outputUrl: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+};
+
+type RenderPrototypeErrorResult = {
+  success: false;
+  errorCode: string;
+  message: string;
 };
 
 export async function POST(request: Request) {
@@ -22,7 +30,7 @@ export async function POST(request: Request) {
   try {
     requestBody = (await request.json()) as RenderPrototypeRequest;
   } catch {
-    const response: RenderVideoErrorResult = {
+    const response: RenderPrototypeErrorResult = {
       success: false,
       errorCode: "INVALID_REQUEST",
       message: "Invalid JSON body.",
@@ -31,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   if (!requestBody || typeof requestBody !== "object") {
-    const response: RenderVideoErrorResult = {
+    const response: RenderPrototypeErrorResult = {
       success: false,
       errorCode: "INVALID_REQUEST",
       message: "Request body is required.",
@@ -39,10 +47,8 @@ export async function POST(request: Request) {
     return NextResponse.json(response, { status: 400 });
   }
 
-  const mode = requestBody.mode === "remotion-test" ? "remotion-test" : "ffmpeg";
-
-  if (mode === "ffmpeg" && !requestBody.renderProject) {
-    const response: RenderVideoErrorResult = {
+  if (!requestBody.renderProject) {
+    const response: RenderPrototypeErrorResult = {
       success: false,
       errorCode: "INVALID_REQUEST",
       message: "renderProject is required.",
@@ -51,28 +57,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    // TODO: Replace slideshow renderer with Remotion in Phase 4.5d.4
-    const result =
-      mode === "remotion-test"
-        ? await renderTestVideo()
-        : await renderVideoFromProject(requestBody.renderProject as RenderProject);
-    const response: RenderVideoSuccessResult = result;
+    const result = await renderVideoWithRemotion(requestBody.renderProject);
+    const response: RenderPrototypeSuccessResult = result;
     return NextResponse.json(response);
   } catch (error) {
-    if (error instanceof RenderVideoError) {
-      const response: RenderVideoErrorResult = {
-        success: false,
-        errorCode: error.errorCode,
-        message: error.message,
-      };
-      return NextResponse.json(response, { status: 400 });
-    }
-
-    const response: RenderVideoErrorResult = {
+    const response: RenderPrototypeErrorResult = {
       success: false,
-      errorCode: "UNKNOWN_RENDER_ERROR",
-      message: "Unexpected rendering error.",
+      errorCode: "REMOTION_RENDER_ERROR",
+      message: error instanceof Error ? error.message : "Unexpected rendering error.",
     };
-    return NextResponse.json(response, { status: 500 });
+    return NextResponse.json(response, { status: 400 });
   }
 }

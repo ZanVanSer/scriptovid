@@ -1,14 +1,97 @@
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+
+import { validateRenderProject } from "@/modules/video-renderer/render-project";
+import type { RenderProject, RenderScene } from "@/types/render-project";
+
+import type { RemotionRenderProps } from "@/remotion/VideoComposition";
 
 const OUTPUT_DIRECTORY = path.join(/* turbopackIgnore: true */ process.cwd(), "public", "generated", "renders");
 const REMOTION_ENTRY = path.join(/* turbopackIgnore: true */ process.cwd(), "remotion", "Root.tsx");
-const REMOTION_TEST_COMPOSITION_ID = "remotion-test-composition";
+const REMOTION_RENDER_PROJECT_COMPOSITION_ID = "remotion-render-project";
+const PUBLIC_DIRECTORY = path.join(/* turbopackIgnore: true */ process.cwd(), "public");
 
 function createRemotionRenderFileName() {
   const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
   const nonce = Math.random().toString(36).slice(2, 8);
-  return `remotion-test-${timestamp}-${nonce}.mp4`;
+  return `render-${timestamp}-${nonce}.mp4`;
+}
+
+function secondsToFrames(seconds: number, fps: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return 1;
+  }
+
+  return Math.max(1, Math.round(seconds * fps));
+}
+
+function inferMimeTypeFromFilePath(filePath: string) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+  if (extension === ".webp") {
+    return "image/webp";
+  }
+  if (extension === ".gif") {
+    return "image/gif";
+  }
+  if (extension === ".svg") {
+    return "image/svg+xml";
+  }
+  return "image/png";
+}
+
+async function localImageFileToDataUrl(filePath: string) {
+  const fileBuffer = await readFile(filePath);
+  const mimeType = inferMimeTypeFromFilePath(filePath);
+  return `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
+}
+
+async function resolveSceneImageUrl(scene: RenderScene) {
+  const mediaRef = scene.image.mediaRef;
+  if (mediaRef.kind === "url") {
+    const normalizedUrl = mediaRef.value.trim();
+    if (!normalizedUrl) {
+      throw new Error(`Scene ${scene.order} image URL is empty.`);
+    }
+    if (normalizedUrl.startsWith("data:image/")) {
+      return normalizedUrl;
+    }
+    if (normalizedUrl.startsWith("http://") || normalizedUrl.startsWith("https://")) {
+      return normalizedUrl;
+    }
+    if (normalizedUrl.startsWith("/")) {
+      const publicFilePath = path.join(PUBLIC_DIRECTORY, normalizedUrl.slice(1));
+      return localImageFileToDataUrl(publicFilePath);
+    }
+    throw new Error(`Scene ${scene.order} image URL must be absolute (/, http://, or https://).`);
+  }
+
+  const normalizedFilePath = path.normalize(mediaRef.value);
+  return localImageFileToDataUrl(normalizedFilePath);
+}
+
+export async function convertRenderProjectToRemotionProps(
+  renderProject: RenderProject,
+): Promise<RemotionRenderProps> {
+  const fps = renderProject.settings.fps;
+  const width = renderProject.settings.width;
+  const height = renderProject.settings.height;
+  const scenes = await Promise.all(
+    renderProject.scenes.map(async (scene) => ({
+      id: scene.id || String(scene.order),
+      imageUrl: await resolveSceneImageUrl(scene),
+      durationFrames: secondsToFrames(scene.finalDuration, fps),
+    })),
+  );
+
+  return {
+    width,
+    height,
+    fps,
+    scenes,
+  };
 }
 
 export type RemotionRenderSuccessResult = {
@@ -20,11 +103,21 @@ export type RemotionRenderSuccessResult = {
   mimeType: "video/mp4";
 };
 
-export async function renderTestVideo(outputPath?: string): Promise<RemotionRenderSuccessResult> {
+export async function renderVideoWithRemotion(
+  renderProject: RenderProject,
+  outputPath?: string,
+): Promise<RemotionRenderSuccessResult> {
   const [{ bundle }, { renderMedia, selectComposition }] = await Promise.all([
     import("@remotion/bundler"),
     import("@remotion/renderer"),
   ]);
+
+  const validatedProject = validateRenderProject(renderProject);
+  if (!validatedProject.isReady) {
+    throw new Error("Render project is not ready.");
+  }
+
+  const remotionProps = await convertRenderProjectToRemotionProps(validatedProject);
 
   await mkdir(OUTPUT_DIRECTORY, { recursive: true });
 
@@ -34,21 +127,21 @@ export async function renderTestVideo(outputPath?: string): Promise<RemotionRend
 
   const bundledServeUrl = await bundle({
     entryPoint: REMOTION_ENTRY,
+    publicDir: PUBLIC_DIRECTORY,
   });
 
   const composition = await selectComposition({
     serveUrl: bundledServeUrl,
-    id: REMOTION_TEST_COMPOSITION_ID,
-    inputProps: {},
+    id: REMOTION_RENDER_PROJECT_COMPOSITION_ID,
+    inputProps: remotionProps,
   });
 
-  // TODO: Replace slideshow renderer with Remotion in Phase 4.5d.4
   await renderMedia({
     serveUrl: bundledServeUrl,
     composition,
     codec: "h264",
     outputLocation: resolvedOutputPath,
-    inputProps: {},
+    inputProps: remotionProps,
   });
 
   const outputStats = await stat(resolvedOutputPath);

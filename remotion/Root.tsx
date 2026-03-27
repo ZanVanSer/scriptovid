@@ -1,22 +1,41 @@
 import { Composition, registerRoot } from "remotion";
 
-import { VideoComposition } from "./VideoComposition";
+import {
+  DEFAULT_REMOTION_RENDER_PROPS,
+  type RemotionRenderProps,
+  VideoComposition,
+} from "./VideoComposition";
 
-const REMOTION_TEST_COMPOSITION_ID = "remotion-test-composition";
+const REMOTION_RENDER_PROJECT_COMPOSITION_ID = "remotion-render-project";
+
+function getTotalDurationInFrames(scenes: RemotionRenderProps["scenes"]) {
+  const total = scenes.reduce((sum, scene) => sum + scene.durationFrames, 0);
+  return Math.max(1, total);
+}
 
 export function RemotionRoot() {
   return (
     <Composition
-      id={REMOTION_TEST_COMPOSITION_ID}
+      id={REMOTION_RENDER_PROJECT_COMPOSITION_ID}
       component={VideoComposition}
-      durationInFrames={150}
-      fps={30}
-      width={1280}
-      height={720}
+      durationInFrames={getTotalDurationInFrames(DEFAULT_REMOTION_RENDER_PROPS.scenes)}
+      fps={DEFAULT_REMOTION_RENDER_PROPS.fps}
+      width={DEFAULT_REMOTION_RENDER_PROPS.width}
+      height={DEFAULT_REMOTION_RENDER_PROPS.height}
+      defaultProps={DEFAULT_REMOTION_RENDER_PROPS}
+      calculateMetadata={({ props }) => {
+        const typedProps = props as RemotionRenderProps;
+        return {
+          durationInFrames: getTotalDurationInFrames(typedProps.scenes),
+          fps: typedProps.fps,
+          width: typedProps.width,
+          height: typedProps.height,
+        };
+      }}
     />
   );
 }
 
 registerRoot(RemotionRoot);
 
-export { REMOTION_TEST_COMPOSITION_ID };
+export { REMOTION_RENDER_PROJECT_COMPOSITION_ID };
