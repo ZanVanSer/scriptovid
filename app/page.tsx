@@ -64,6 +64,44 @@ type SceneGenerationState = {
   imageUrl?: string;
 };
 type BatchGenerationMode = "generate-all" | "regenerate-all" | "regenerate-failed";
+const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_multilingual_v2";
+
+type ElevenLabsNarrationSuccessResponse = {
+  success: true;
+  audioUrl: string;
+  audioPath: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  provider: "elevenlabs";
+  voiceId: string;
+  modelId: string;
+};
+
+type ElevenLabsNarrationErrorResponse = {
+  success: false;
+  errorCode: string;
+  message: string;
+  details?: string;
+};
+
+type ElevenLabsOption = {
+  id: string;
+  name: string;
+};
+
+type ElevenLabsOptionsSuccessResponse = {
+  success: true;
+  voices: ElevenLabsOption[];
+  models: ElevenLabsOption[];
+};
+
+type ElevenLabsOptionsErrorResponse = {
+  success: false;
+  errorCode: string;
+  message: string;
+  details?: string;
+};
 
 function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
@@ -114,7 +152,7 @@ function isAllowedAudioFile(file: File) {
   return ACCEPTED_AUDIO_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
 }
 
-function extractAudioDurationFromObjectUrl(objectUrl: string) {
+function extractAudioDurationFromAudioSource(audioSourceUrl: string) {
   return new Promise<number | undefined>((resolve) => {
     const audio = document.createElement("audio");
     let isSettled = false;
@@ -137,8 +175,18 @@ function extractAudioDurationFromObjectUrl(objectUrl: string) {
     audio.onerror = () => {
       settle(undefined);
     };
-    audio.src = objectUrl;
+    audio.src = audioSourceUrl;
   });
+}
+
+function isObjectUrl(url: string) {
+  return url.startsWith("blob:");
+}
+
+function revokeAudioObjectUrlIfNeeded(url?: string) {
+  if (url && isObjectUrl(url)) {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export default function Home() {
@@ -173,6 +221,11 @@ export default function Home() {
   const [isNarrationDropActive, setIsNarrationDropActive] = useState(false);
   const narrationAudioUrlRef = useRef<string | undefined>(undefined);
   const narrationUploadRequestRef = useRef(0);
+  const narrationGenerationRequestRef = useRef(0);
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsOption[]>([]);
+  const [elevenLabsModels, setElevenLabsModels] = useState<ElevenLabsOption[]>([]);
+  const [isLoadingElevenLabsOptions, setIsLoadingElevenLabsOptions] = useState(false);
+  const [elevenLabsOptionsError, setElevenLabsOptionsError] = useState<string | null>(null);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{
     completed: number;
@@ -198,24 +251,22 @@ export default function Home() {
 
   useEffect(() => {
     return () => {
-      if (narrationAudioUrlRef.current) {
-        URL.revokeObjectURL(narrationAudioUrlRef.current);
-      }
+      revokeAudioObjectUrlIfNeeded(narrationAudioUrlRef.current);
     };
   }, []);
 
-  function clearNarrationManualFields() {
+  function clearNarrationAsset() {
     narrationUploadRequestRef.current += 1;
+    narrationGenerationRequestRef.current += 1;
     setNarration((current) => {
-      if (current.audioUrl) {
-        URL.revokeObjectURL(current.audioUrl);
-      }
+      revokeAudioObjectUrlIfNeeded(current.audioUrl);
 
       return {
         ...current,
-        mode: "manual",
         status: "idle",
+        provider: undefined,
         audioUrl: undefined,
+        audioPath: undefined,
         fileName: undefined,
         mimeType: undefined,
         fileSize: undefined,
@@ -246,23 +297,23 @@ export default function Home() {
       error: undefined,
     }));
 
-    const duration = await extractAudioDurationFromObjectUrl(objectUrl);
+    const duration = await extractAudioDurationFromAudioSource(objectUrl);
 
     if (narrationUploadRequestRef.current !== requestId) {
-      URL.revokeObjectURL(objectUrl);
+      revokeAudioObjectUrlIfNeeded(objectUrl);
       return;
     }
 
     setNarration((current) => {
-      if (current.audioUrl) {
-        URL.revokeObjectURL(current.audioUrl);
-      }
+      revokeAudioObjectUrlIfNeeded(current.audioUrl);
 
       return {
         ...current,
         mode: "manual",
         status: "done",
+        provider: "manual",
         audioUrl: objectUrl,
+        audioPath: undefined,
         fileName: file.name,
         mimeType: file.type || undefined,
         fileSize: file.size,
@@ -275,6 +326,220 @@ export default function Home() {
   function openNarrationFilePicker() {
     const input = document.getElementById("narration-upload") as HTMLInputElement | null;
     input?.click();
+  }
+
+  function updateElevenLabsSettings(
+    field: "voiceId" | "modelId" | "stability" | "similarityBoost" | "style" | "useSpeakerBoost",
+    value: string | number | boolean,
+  ) {
+    setNarration((current) => ({
+      ...current,
+      elevenLabs: {
+        ...current.elevenLabs,
+        [field]: value,
+      },
+    }));
+  }
+
+  async function loadElevenLabsOptions() {
+    setIsLoadingElevenLabsOptions(true);
+    setElevenLabsOptionsError(null);
+
+    try {
+      const response = await fetch("/api/narration/elevenlabs/options");
+      const payload = (await response.json().catch(() => null)) as
+        | ElevenLabsOptionsSuccessResponse
+        | ElevenLabsOptionsErrorResponse
+        | null;
+
+      if (!response.ok || !payload || !payload.success) {
+        const errorPayload = payload as ElevenLabsOptionsErrorResponse | null;
+        setElevenLabsOptionsError(errorPayload?.message || "Could not load ElevenLabs options.");
+        setIsLoadingElevenLabsOptions(false);
+        return;
+      }
+
+      setElevenLabsVoices(payload.voices);
+      setElevenLabsModels(payload.models);
+      setNarration((current) => ({
+        ...current,
+        elevenLabs: {
+          ...current.elevenLabs,
+          voiceId: current.elevenLabs.voiceId || payload.voices[0]?.id,
+          modelId: current.elevenLabs.modelId || payload.models[0]?.id || DEFAULT_ELEVENLABS_MODEL_ID,
+        },
+      }));
+    } catch {
+      setElevenLabsOptionsError("Could not load ElevenLabs options.");
+    } finally {
+      setIsLoadingElevenLabsOptions(false);
+    }
+  }
+
+  useEffect(() => {
+    if (narration.mode !== "elevenlabs") {
+      return;
+    }
+
+    if (elevenLabsVoices.length > 0 && elevenLabsModels.length > 0) {
+      return;
+    }
+
+    void loadElevenLabsOptions();
+  }, [narration.mode, elevenLabsVoices.length, elevenLabsModels.length]);
+
+  async function generateElevenLabsNarration() {
+    const text = scriptText.trim();
+    const voiceId = narration.elevenLabs.voiceId?.trim() || "";
+    const modelId = narration.elevenLabs.modelId?.trim() || "";
+    const { stability, similarityBoost, style, useSpeakerBoost } = narration.elevenLabs;
+
+    if (!text) {
+      setNarration((current) => ({
+        ...current,
+        mode: "elevenlabs",
+        status: "error",
+        error: "Script text is required before generating narration.",
+      }));
+      return;
+    }
+
+    if (!voiceId) {
+      setNarration((current) => ({
+        ...current,
+        mode: "elevenlabs",
+        status: "error",
+        error: "voiceId is required for ElevenLabs narration.",
+      }));
+      return;
+    }
+
+    if (!modelId) {
+      setNarration((current) => ({
+        ...current,
+        mode: "elevenlabs",
+        status: "error",
+        error: "modelId is required for ElevenLabs narration.",
+      }));
+      return;
+    }
+
+    const hasInvalidTuning =
+      !Number.isFinite(stability) ||
+      stability < 0 ||
+      stability > 1 ||
+      !Number.isFinite(similarityBoost) ||
+      similarityBoost < 0 ||
+      similarityBoost > 1 ||
+      !Number.isFinite(style) ||
+      style < 0 ||
+      style > 1;
+
+    if (hasInvalidTuning) {
+      setNarration((current) => ({
+        ...current,
+        mode: "elevenlabs",
+        status: "error",
+        error: "Advanced voice settings must be numbers between 0 and 1.",
+      }));
+      return;
+    }
+
+    const requestId = narrationGenerationRequestRef.current + 1;
+    narrationGenerationRequestRef.current = requestId;
+
+    setNarration((current) => ({
+      ...current,
+      mode: "elevenlabs",
+      status: "loading",
+      error: undefined,
+      elevenLabs: {
+        ...current.elevenLabs,
+        voiceId,
+        modelId,
+      },
+    }));
+
+    let response: Response;
+    try {
+      response = await fetch("/api/narration/elevenlabs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+          voiceId,
+          modelId,
+          stability,
+          similarityBoost,
+          style,
+          useSpeakerBoost,
+        }),
+      });
+    } catch {
+      if (narrationGenerationRequestRef.current !== requestId) {
+        return;
+      }
+
+      setNarration((current) => ({
+        ...current,
+        mode: "elevenlabs",
+        status: "error",
+        error: "Could not reach the narration server route.",
+      }));
+      return;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | ElevenLabsNarrationSuccessResponse
+      | ElevenLabsNarrationErrorResponse
+      | null;
+
+    if (narrationGenerationRequestRef.current !== requestId) {
+      return;
+    }
+
+    if (!response.ok || !payload || !payload.success) {
+      const errorPayload = payload as ElevenLabsNarrationErrorResponse | null;
+      setNarration((current) => ({
+        ...current,
+        mode: "elevenlabs",
+        status: "error",
+        error: errorPayload?.message || "ElevenLabs narration generation failed.",
+      }));
+      return;
+    }
+
+    const generated = payload as ElevenLabsNarrationSuccessResponse;
+    const duration = await extractAudioDurationFromAudioSource(generated.audioUrl);
+
+    if (narrationGenerationRequestRef.current !== requestId) {
+      return;
+    }
+
+    setNarration((current) => {
+      revokeAudioObjectUrlIfNeeded(current.audioUrl);
+
+      return {
+        ...current,
+        mode: "elevenlabs",
+        status: "done",
+        provider: generated.provider,
+        audioUrl: generated.audioUrl,
+        audioPath: generated.audioPath,
+        fileName: generated.fileName,
+        mimeType: generated.mimeType,
+        fileSize: generated.fileSize,
+        duration,
+        error: undefined,
+        elevenLabs: {
+          ...current.elevenLabs,
+          voiceId: generated.voiceId,
+          modelId: generated.modelId,
+        },
+      };
+    });
   }
 
   function clearSceneImageErrorsFor(sceneIndex: number) {
@@ -1060,6 +1325,11 @@ export default function Home() {
                   setNarration((current) => ({
                     ...current,
                     mode: nextMode,
+                    error: undefined,
+                    elevenLabs: {
+                      ...current.elevenLabs,
+                      modelId: current.elevenLabs.modelId || DEFAULT_ELEVENLABS_MODEL_ID,
+                    },
                   }));
                 }}
               >
@@ -1122,7 +1392,7 @@ export default function Home() {
                   {narration.audioUrl ? "Replace narration" : "Upload narration"}
                 </button>
                 {narration.audioUrl ? (
-                  <button type="button" className={styles.smallButton} onClick={clearNarrationManualFields}>
+                  <button type="button" className={styles.smallButton} onClick={clearNarrationAsset}>
                     Remove narration
                   </button>
                 ) : null}
@@ -1143,10 +1413,162 @@ export default function Home() {
               </div>
             </>
           ) : (
-            <p className={styles.info}>ElevenLabs generation is not implemented in this phase.</p>
+            <>
+              <div className={styles.controlsGrid}>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Voice ID</span>
+                  <select
+                    className={styles.selectInput}
+                    value={narration.elevenLabs.voiceId || ""}
+                    onChange={(event) => updateElevenLabsSettings("voiceId", event.target.value)}
+                    disabled={isLoadingElevenLabsOptions || elevenLabsVoices.length === 0}
+                  >
+                    <option value="">
+                      {isLoadingElevenLabsOptions ? "Loading voices..." : "Select voice"}
+                    </option>
+                    {elevenLabsVoices.map((voiceOption) => (
+                      <option key={voiceOption.id} value={voiceOption.id}>
+                        {voiceOption.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Model ID</span>
+                  <select
+                    className={styles.selectInput}
+                    value={narration.elevenLabs.modelId || ""}
+                    onChange={(event) => updateElevenLabsSettings("modelId", event.target.value)}
+                    disabled={isLoadingElevenLabsOptions || elevenLabsModels.length === 0}
+                  >
+                    <option value="">
+                      {isLoadingElevenLabsOptions ? "Loading models..." : "Select model"}
+                    </option>
+                    {elevenLabsModels.map((modelOption) => (
+                      <option key={modelOption.id} value={modelOption.id}>
+                        {modelOption.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className={styles.actions}>
+                <button
+                  type="button"
+                  className={styles.smallButton}
+                  onClick={() => {
+                    void loadElevenLabsOptions();
+                  }}
+                  disabled={isLoadingElevenLabsOptions}
+                >
+                  {isLoadingElevenLabsOptions ? "Refreshing..." : "Refresh voices/models"}
+                </button>
+                <p className={styles.modeNote}>Options are loaded from your ElevenLabs account tier.</p>
+              </div>
+              {elevenLabsOptionsError ? <p className={styles.error}>{elevenLabsOptionsError}</p> : null}
+              <details className={styles.subDetails}>
+                <summary className={styles.subSummary}>Advanced voice settings</summary>
+                <div className={styles.controlsGrid}>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Stability (0-1)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      className={styles.numberInput}
+                      value={narration.elevenLabs.stability}
+                      onChange={(event) =>
+                        updateElevenLabsSettings("stability", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Similarity boost (0-1)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      className={styles.numberInput}
+                      value={narration.elevenLabs.similarityBoost}
+                      onChange={(event) =>
+                        updateElevenLabsSettings("similarityBoost", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Style (0-1)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      className={styles.numberInput}
+                      value={narration.elevenLabs.style}
+                      onChange={(event) => updateElevenLabsSettings("style", Number(event.target.value))}
+                    />
+                  </label>
+                  <label className={styles.checkboxField}>
+                    <input
+                      type="checkbox"
+                      checked={narration.elevenLabs.useSpeakerBoost}
+                      onChange={(event) =>
+                        updateElevenLabsSettings("useSpeakerBoost", event.target.checked)
+                      }
+                    />
+                    <span className={styles.fieldLabel}>Use speaker boost</span>
+                  </label>
+                </div>
+              </details>
+              <div className={styles.actions}>
+                <button
+                  type="button"
+                  className={styles.buttonPrimary}
+                  disabled={narration.status === "loading"}
+                  onClick={() => {
+                    void generateElevenLabsNarration();
+                  }}
+                >
+                  {narration.provider === "elevenlabs" && narration.audioUrl
+                    ? narration.status === "loading"
+                      ? "Regenerating..."
+                      : "Regenerate narration"
+                    : narration.status === "loading"
+                      ? "Generating..."
+                      : "Generate narration"}
+                </button>
+                {narration.audioUrl ? (
+                  <button type="button" className={styles.button} onClick={clearNarrationAsset}>
+                    Remove narration
+                  </button>
+                ) : null}
+              </div>
+              {narration.audioUrl ? (
+                <audio className={styles.narrationPlayer} controls src={narration.audioUrl} />
+              ) : (
+                <div className={styles.emptyState}>Generate narration from the full script to preview audio.</div>
+              )}
+              <div className={styles.summaryGrid}>
+                <div className={styles.summaryItem}>File: {narration.fileName || "—"}</div>
+                <div className={styles.summaryItem}>MIME: {narration.mimeType || "—"}</div>
+                <div className={styles.summaryItem}>
+                  Size: {typeof narration.fileSize === "number" ? formatFileSize(narration.fileSize) : "—"}
+                </div>
+                <div className={styles.summaryItem}>
+                  Duration:{" "}
+                  {typeof narration.duration === "number" ? formatDurationClock(narration.duration) : "—"}
+                </div>
+                <div className={styles.summaryItem}>Provider: {narration.provider || "—"}</div>
+                <div className={styles.summaryItem}>Voice ID: {narration.elevenLabs.voiceId || "—"}</div>
+                <div className={styles.summaryItem}>Model ID: {narration.elevenLabs.modelId || "—"}</div>
+              </div>
+            </>
           )}
           {narration.status === "loading" ? (
-            <p className={styles.info}>Reading audio metadata...</p>
+            <p className={styles.info}>
+              {narration.mode === "elevenlabs" ? "Generating narration..." : "Reading audio metadata..."}
+            </p>
           ) : null}
           {narration.audioUrl && narration.duration === undefined && narration.status === "done" ? (
             <p className={styles.info}>Duration metadata is unavailable for this file.</p>

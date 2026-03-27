@@ -124,6 +124,13 @@
   gap: 6px;
 }
 
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
 .fieldLabel {
   font-size: 13px;
   color: #57534e;

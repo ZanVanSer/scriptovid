@@ -14,7 +14,9 @@ export type ElevenLabsNarrationSettings = {
 export type NarrationState = {
   mode: NarrationMode;
   status: NarrationStatus;
+  provider?: "manual" | "elevenlabs";
   audioUrl?: string;
+  audioPath?: string;
   fileName?: string;
   mimeType?: string;
   fileSize?: number;
@@ -27,7 +29,9 @@ export function createDefaultNarrationState(): NarrationState {
   return {
     mode: "manual",
     status: "idle",
+    provider: undefined,
     audioUrl: undefined,
+    audioPath: undefined,
     fileName: undefined,
     mimeType: undefined,
     fileSize: undefined,
