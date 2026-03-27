@@ -398,6 +398,30 @@
   width: 100%;
 }
 
+.renderSummary {
+  display: grid;
+  gap: 8px;
+}
+
+.renderIssueList {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.renderIssueItem {
+  font-size: 12px;
+}
+
+.renderIssueError {
+  color: #b91c1c;
+}
+
+.renderIssueWarning {
+  color: #9a3412;
+}
+
 .previewDetails {
   display: grid;
   gap: 10px;

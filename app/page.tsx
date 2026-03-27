@@ -15,6 +15,7 @@ import {
   buildSceneImagePrompt,
   type VisualStylePresetId,
 } from "@/modules/image-generation/prompt-builder";
+import { buildRenderProject } from "@/modules/video-renderer/render-project";
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
 import { detectSplitWarnings, validateScriptInput } from "@/modules/scene-splitter/input-quality";
@@ -1012,6 +1013,15 @@ export default function Home() {
 
   const activeNarrationAsset: NarrationAsset | undefined = narration.asset;
   const isNarrationReady = isNarrationReadyForRender(narration);
+  const renderProject = useMemo(
+    () =>
+      buildRenderProject({
+        scenePackResult,
+        sceneImages,
+        narration,
+      }),
+    [scenePackResult, sceneImages, narration],
+  );
   const durationDeltaSeconds =
     typeof activeNarrationAsset?.duration === "number" &&
     typeof result?.totalEstimatedDurationSeconds === "number"
@@ -1407,6 +1417,39 @@ export default function Home() {
               {formatSeconds(durationDeltaSeconds)}
             </p>
           ) : null}
+          <div className={styles.renderSummary}>
+            <div className={styles.summaryGrid}>
+              <div className={styles.summaryItem}>Scenes: {renderProject.scenes.length}</div>
+              <div className={styles.summaryItem}>
+                Estimated Duration: {formatDurationClock(renderProject.totalEstimatedSceneDuration)}
+              </div>
+              <div className={styles.summaryItem}>
+                Final Duration: {formatDurationClock(renderProject.totalFinalSceneDuration)}
+              </div>
+              <div className={styles.summaryItem}>
+                Narration Duration:{" "}
+                {typeof renderProject.narrationDuration === "number"
+                  ? formatDurationClock(renderProject.narrationDuration)
+                  : "—"}
+              </div>
+              <div className={styles.summaryItem}>Timing Strategy: {renderProject.timingStrategy}</div>
+              <div className={styles.summaryItem}>Render Ready: {renderProject.isReady ? "Yes" : "No"}</div>
+            </div>
+            {renderProject.issues.length > 0 ? (
+              <ul className={styles.renderIssueList}>
+                {renderProject.issues.map((issue, issueIndex) => (
+                  <li
+                    key={`${issue.code}-${issueIndex}`}
+                    className={`${styles.renderIssueItem} ${
+                      issue.level === "error" ? styles.renderIssueError : styles.renderIssueWarning
+                    }`}
+                  >
+                    {issue.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
           {narration.mode === "manual" ? (
             <>
               <div
