@@ -1,7 +1,3 @@
-import {
-  assignDeterministicMotionPresetBySceneIndex,
-  normalizeAllowedMotionPresetIds,
-} from "@/lib/motion/motionPresets";
 import type { NarrationState } from "@/types/narration";
 import {
   DEFAULT_RENDER_SETTINGS,
@@ -145,9 +141,13 @@ function resolveMotionSettings(appState: RenderProjectAppState): MotionSettings 
     ...(appState.motionSettings || {}),
   };
 
+  const normalizedAllowedPresetIds = Array.isArray(mergedMotion.allowedPresetIds)
+    ? ([...new Set(mergedMotion.allowedPresetIds)] as MotionSettings["allowedPresetIds"])
+    : [];
+
   return {
     enabled: Boolean(mergedMotion.enabled),
-    allowedPresetIds: normalizeAllowedMotionPresetIds(mergedMotion.allowedPresetIds || []),
+    allowedPresetIds: normalizedAllowedPresetIds,
     assignmentMode: "deterministic-by-scene-index",
     speed: mergedMotion.speed === 0.5 || mergedMotion.speed === 1 ? mergedMotion.speed : 0.75,
   };
@@ -279,16 +279,6 @@ export function validateRenderProject(
     );
   }
 
-  if (renderProject.settings.motion.enabled && renderProject.settings.motion.allowedPresetIds.length === 0) {
-    issues.push(
-      createIssue(
-        "MOTION_PRESET_POOL_EMPTY",
-        "Motion effects are enabled, but no motion presets are selected.",
-        "warning",
-      ),
-    );
-  }
-
   const largeMismatchIssue = getLargeDurationMismatchIssue(
     renderProject.totalFinalSceneDuration,
     renderProject.narrationDuration,
@@ -364,23 +354,7 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
         }))
       : estimatedScenes;
 
-  const scenes = timingAdjustedScenes.reduce<RenderProject["scenes"]>((acc, scene, sceneIndex) => {
-    const motionPreset =
-      motionSettings.enabled && motionSettings.allowedPresetIds.length > 0
-        ? assignDeterministicMotionPresetBySceneIndex(
-            sceneIndex,
-            motionSettings.allowedPresetIds,
-            appState.motionAssignmentSalt,
-          )
-        : undefined;
-
-    acc.push({
-      ...scene,
-      motionPreset,
-    });
-
-    return acc;
-  }, []);
+  const scenes = timingAdjustedScenes.map((scene) => ({ ...scene }));
 
   const totalFinalSceneDuration = scenes.reduce((sum, scene) => sum + scene.finalDuration, 0);
 

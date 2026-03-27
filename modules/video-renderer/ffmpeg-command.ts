@@ -1,4 +1,3 @@
-import { buildSceneMotionFilter } from "@/modules/video-renderer/ffmpeg-motion";
 import type { RenderProject } from "@/types/render-project";
 
 export type BuildFfmpegPrototypeArgsInput = {
@@ -26,24 +25,17 @@ export function buildFfmpegPrototypeArgs(input: BuildFfmpegPrototypeArgsInput) {
   ]);
   inputArgs.push("-i", narrationPath);
 
+  // TODO: Remotion renderer will replace this pipeline in Phase 4.5d.2
   const perSceneChains = orderedScenes
     .map((scene, index) => {
-      const { filter, debug } = buildSceneMotionFilter({
-        scene,
-        width,
-        height,
-        fps,
-        motionEnabled: renderProject.settings.motion.enabled,
-        motionSpeed: renderProject.settings.motion.speed,
-      });
-      // Scene-level debug traces help verify deterministic preset assignment and crop bounds.
-      console.debug(
-        `[render-motion] scene=${debug.sceneIndex} preset=${debug.presetId} ` +
-          `working=${debug.workingWidth}x${debug.workingHeight} ` +
-          `cropX=${debug.startCropX.toFixed(2)}->${debug.endCropX.toFixed(2)} ` +
-          `cropY=${debug.startCropY.toFixed(2)}->${debug.endCropY.toFixed(2)} ` +
-          `duration=${debug.duration.toFixed(3)}s`,
-      );
+      void scene;
+      const filter = [
+        `scale=${width}:${height}:force_original_aspect_ratio=increase`,
+        `crop=${width}:${height}`,
+        `fps=${fps}`,
+        "format=yuv420p",
+        "setsar=1",
+      ].join(",");
       return `[${index}:v]${filter}[v${index}]`;
     })
     .join(";");

@@ -131,6 +131,7 @@ export async function renderVideoFromProject(
   const outputFileName = createRenderFileName();
   const outputPath = path.join(OUTPUT_DIRECTORY, outputFileName);
   const outputUrl = `/generated/renders/${outputFileName}`;
+  // TODO: Remotion renderer will replace this pipeline in Phase 4.5d.2
   const ffmpegArgs = buildFfmpegPrototypeArgs({
     renderProject: validatedProject,
     narrationPath: validatedProject.narration.mediaRef.value,
