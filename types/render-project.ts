@@ -9,6 +9,7 @@ export type MotionSettings = {
   enabled: boolean;
   allowedPresetIds: MotionPresetId[];
   assignmentMode: "deterministic-random";
+  speed: 0.5 | 0.75 | 1;
 };
 
 export type RenderImageAsset = {
@@ -81,5 +82,6 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
     enabled: true,
     allowedPresetIds: ["zoom-in", "zoom-out", "pan-left", "pan-right", "pan-up", "pan-down"],
     assignmentMode: "deterministic-random",
+    speed: 0.75,
   },
 };

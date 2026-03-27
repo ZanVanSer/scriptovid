@@ -1,5 +1,5 @@
 import {
-  assignDeterministicMotionPreset,
+  assignDeterministicMotionPresetNoAdjacentRepeat,
   normalizeAllowedMotionPresetIds,
 } from "@/modules/video-renderer/motion-presets";
 import type { NarrationState } from "@/types/narration";
@@ -32,6 +32,7 @@ export type RenderProjectAppState = {
   settings?: Partial<RenderSettings>;
   timingStrategy?: "estimated" | "scale-to-narration" | "auto";
   motionSettings?: Partial<MotionSettings>;
+  motionAssignmentSalt?: string;
 };
 
 function isPositiveDuration(value: number) {
@@ -148,6 +149,7 @@ function resolveMotionSettings(appState: RenderProjectAppState): MotionSettings 
     enabled: Boolean(mergedMotion.enabled),
     allowedPresetIds: normalizeAllowedMotionPresetIds(mergedMotion.allowedPresetIds || []),
     assignmentMode: "deterministic-random",
+    speed: mergedMotion.speed === 0.5 || mergedMotion.speed === 1 ? mergedMotion.speed : 0.75,
   };
 }
 
@@ -362,17 +364,26 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
         }))
       : estimatedScenes;
 
-  const scenes = timingAdjustedScenes.map((scene) => {
+  const scenes = timingAdjustedScenes.reduce<RenderProject["scenes"]>((acc, scene) => {
+    const previousPresetId = acc[acc.length - 1]?.motionPreset;
     const motionPreset =
       motionSettings.enabled && motionSettings.allowedPresetIds.length > 0
-        ? assignDeterministicMotionPreset(scene.id, scene.order, motionSettings.allowedPresetIds)
+        ? assignDeterministicMotionPresetNoAdjacentRepeat(
+            scene.id,
+            scene.order,
+            motionSettings.allowedPresetIds,
+            previousPresetId,
+            appState.motionAssignmentSalt,
+          )
         : undefined;
 
-    return {
+    acc.push({
       ...scene,
       motionPreset,
-    };
-  });
+    });
+
+    return acc;
+  }, []);
 
   const totalFinalSceneDuration = scenes.reduce((sum, scene) => sum + scene.finalDuration, 0);
 

@@ -1,3 +1,4 @@
+import { buildSceneMotionFilter } from "@/modules/video-renderer/ffmpeg-motion";
 import type { RenderProject } from "@/types/render-project";
 
 export type BuildFfmpegPrototypeArgsInput = {
@@ -5,10 +6,6 @@ export type BuildFfmpegPrototypeArgsInput = {
   narrationPath: string;
   outputPath: string;
 };
-
-function getScalePadFilter(width: number, height: number) {
-  return `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p,setsar=1`;
-}
 
 export function buildFfmpegPrototypeArgs(input: BuildFfmpegPrototypeArgsInput) {
   const { renderProject, narrationPath, outputPath } = input;
@@ -20,6 +17,8 @@ export function buildFfmpegPrototypeArgs(input: BuildFfmpegPrototypeArgsInput) {
   const inputArgs = orderedScenes.flatMap((scene) => [
     "-loop",
     "1",
+    "-framerate",
+    String(fps),
     "-t",
     String(scene.finalDuration),
     "-i",
@@ -28,7 +27,17 @@ export function buildFfmpegPrototypeArgs(input: BuildFfmpegPrototypeArgsInput) {
   inputArgs.push("-i", narrationPath);
 
   const perSceneChains = orderedScenes
-    .map((_, index) => `[${index}:v]${getScalePadFilter(width, height)}[v${index}]`)
+    .map((scene, index) => {
+      const filter = buildSceneMotionFilter({
+        scene,
+        width,
+        height,
+        fps,
+        motionEnabled: renderProject.settings.motion.enabled,
+        motionSpeed: renderProject.settings.motion.speed,
+      });
+      return `[${index}:v]${filter}[v${index}]`;
+    })
     .join(";");
   const concatInputPads = orderedScenes.map((_, index) => `[v${index}]`).join("");
   const concatChain = `${concatInputPads}concat=n=${orderedScenes.length}:v=1:a=0[vout]`;

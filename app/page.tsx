@@ -155,6 +155,11 @@ type RenderPrototypeErrorResponse = {
   message: string;
 };
 
+type SceneMotionDebugRow = {
+  order: number;
+  motionPreset: string;
+};
+
 type ClearGeneratedSuccessResponse = {
   success: true;
   message: string;
@@ -304,10 +309,13 @@ export default function Home() {
   const [renderStatus, setRenderStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [renderResult, setRenderResult] = useState<RenderPrototypeSuccessResponse | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [lastRenderMotionAssignments, setLastRenderMotionAssignments] = useState<SceneMotionDebugRow[]>([]);
   const [isClearingGenerated, setIsClearingGenerated] = useState(false);
   const [clearGeneratedMessage, setClearGeneratedMessage] = useState<string | null>(null);
   const [motionEnabled, setMotionEnabled] = useState(true);
   const [allowedMotionPresetIds, setAllowedMotionPresetIds] = useState<MotionPresetId[]>(MOTION_PRESET_IDS);
+  const [motionSpeed, setMotionSpeed] = useState<0.5 | 0.75 | 1>(0.75);
+  const [motionAssignmentSalt, setMotionAssignmentSalt] = useState("initial");
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -1159,19 +1167,32 @@ export default function Home() {
 
   const activeNarrationAsset: NarrationAsset | undefined = narration.asset;
   const isNarrationReady = isNarrationReadyForRender(narration);
+  function buildRenderProjectFromCurrentState(assignmentSalt: string) {
+    return buildRenderProject({
+      scenePackResult,
+      sceneImages,
+      narration,
+      motionSettings: {
+        enabled: motionEnabled,
+        allowedPresetIds: allowedMotionPresetIds,
+        assignmentMode: "deterministic-random",
+        speed: motionSpeed,
+      },
+      motionAssignmentSalt: assignmentSalt,
+    });
+  }
+
   const renderProject = useMemo(
-    () =>
-      buildRenderProject({
-        scenePackResult,
-        sceneImages,
-        narration,
-        motionSettings: {
-          enabled: motionEnabled,
-          allowedPresetIds: allowedMotionPresetIds,
-          assignmentMode: "deterministic-random",
-        },
-      }),
-    [scenePackResult, sceneImages, narration, motionEnabled, allowedMotionPresetIds],
+    () => buildRenderProjectFromCurrentState(motionAssignmentSalt),
+    [
+      scenePackResult,
+      sceneImages,
+      narration,
+      motionEnabled,
+      allowedMotionPresetIds,
+      motionSpeed,
+      motionAssignmentSalt,
+    ],
   );
   const assignedMotionCount = renderProject.scenes.filter((scene) => scene.motionPreset).length;
   const durationDeltaSeconds =
@@ -1182,10 +1203,33 @@ export default function Home() {
   const isRenderBusy = renderStatus === "loading";
 
   async function handleRenderVideo() {
-    if (!renderProject.isReady || isRenderBusy) {
+    if (isRenderBusy) {
       return;
     }
 
+    const nextSalt = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const renderProjectForRequest = buildRenderProjectFromCurrentState(nextSalt);
+    setMotionAssignmentSalt(nextSalt);
+
+    if (!renderProjectForRequest.isReady) {
+      setRenderStatus("error");
+      setRenderError("Render project is not ready.");
+      setRenderResult(null);
+      setLastRenderMotionAssignments(
+        renderProjectForRequest.scenes.map((scene) => ({
+          order: scene.order,
+          motionPreset: scene.motionPreset || "static",
+        })),
+      );
+      return;
+    }
+
+    setLastRenderMotionAssignments(
+      renderProjectForRequest.scenes.map((scene) => ({
+        order: scene.order,
+        motionPreset: scene.motionPreset || "static",
+      })),
+    );
     setRenderStatus("loading");
     setRenderError(null);
     setRenderResult(null);
@@ -1197,7 +1241,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ renderProject }),
+        body: JSON.stringify({ renderProject: renderProjectForRequest }),
       });
     } catch {
       setRenderStatus("error");
@@ -1929,6 +1973,26 @@ export default function Home() {
               />
               <span className={styles.fieldLabel}>Enable motion effects</span>
             </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Motion speed</span>
+              <select
+                className={styles.selectInput}
+                value={String(motionSpeed)}
+                disabled={!motionEnabled}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  if (next === 0.5 || next === 1) {
+                    setMotionSpeed(next);
+                  } else {
+                    setMotionSpeed(0.75);
+                  }
+                }}
+              >
+                <option value="0.5">Slow</option>
+                <option value="0.75">Normal</option>
+                <option value="1">Fast</option>
+              </select>
+            </label>
             <div className={styles.motionPresetGrid}>
               {MOTION_PRESETS.map((preset) => (
                 <label key={preset.id} className={styles.checkboxField}>
@@ -2016,6 +2080,15 @@ export default function Home() {
             ) : null}
             {renderStatus === "error" && renderError ? <p className={styles.error}>{renderError}</p> : null}
             {clearGeneratedMessage ? <p className={styles.info}>{clearGeneratedMessage}</p> : null}
+            {lastRenderMotionAssignments.length > 0 ? (
+              <div className={styles.motionDebugList}>
+                {lastRenderMotionAssignments.map((row) => (
+                  <div key={`motion-${row.order}`} className={styles.listMeta}>
+                    Scene {row.order}: {row.motionPreset}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
 

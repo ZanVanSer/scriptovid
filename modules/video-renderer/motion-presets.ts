@@ -42,17 +42,53 @@ function hashToUint32(value: string) {
   return hash >>> 0;
 }
 
+function getDeterministicStartIndex(
+  sceneId: string,
+  sceneOrder: number,
+  allowedPresetIds: MotionPresetId[],
+  assignmentSalt?: string,
+) {
+  const seed = `${sceneId}::${sceneOrder}::${allowedPresetIds.join("|")}::${assignmentSalt || ""}`;
+  const hash = hashToUint32(seed);
+  return hash % allowedPresetIds.length;
+}
+
 export function assignDeterministicMotionPreset(
   sceneId: string,
   sceneOrder: number,
   allowedPresetIds: MotionPresetId[],
+  assignmentSalt?: string,
 ) {
   if (allowedPresetIds.length === 0) {
     return undefined;
   }
 
-  const seed = `${sceneId}::${sceneOrder}::${allowedPresetIds.join("|")}`;
-  const hash = hashToUint32(seed);
-  const index = hash % allowedPresetIds.length;
+  const index = getDeterministicStartIndex(sceneId, sceneOrder, allowedPresetIds, assignmentSalt);
   return allowedPresetIds[index];
+}
+
+export function assignDeterministicMotionPresetNoAdjacentRepeat(
+  sceneId: string,
+  sceneOrder: number,
+  allowedPresetIds: MotionPresetId[],
+  previousPresetId?: MotionPresetId,
+  assignmentSalt?: string,
+) {
+  if (allowedPresetIds.length === 0) {
+    return undefined;
+  }
+
+  if (allowedPresetIds.length === 1) {
+    return allowedPresetIds[0];
+  }
+
+  const startIndex = getDeterministicStartIndex(sceneId, sceneOrder, allowedPresetIds, assignmentSalt);
+  for (let offset = 0; offset < allowedPresetIds.length; offset += 1) {
+    const candidate = allowedPresetIds[(startIndex + offset) % allowedPresetIds.length];
+    if (candidate !== previousPresetId) {
+      return candidate;
+    }
+  }
+
+  return allowedPresetIds[startIndex];
 }

@@ -418,6 +418,15 @@
   gap: 6px 10px;
 }
 
+.motionDebugList {
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+  display: grid;
+  gap: 2px;
+}
+
 .renderIssueList {
   margin: 0;
   padding-left: 16px;
