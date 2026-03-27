@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { renderTestVideo } from "@/lib/render/remotionRenderer";
 import {
   RenderVideoError,
   renderVideoFromProject,
@@ -12,6 +13,7 @@ export const runtime = "nodejs";
 
 type RenderPrototypeRequest = {
   renderProject?: RenderProject;
+  mode?: "ffmpeg" | "remotion-test";
 };
 
 export async function POST(request: Request) {
@@ -28,7 +30,18 @@ export async function POST(request: Request) {
     return NextResponse.json(response, { status: 400 });
   }
 
-  if (!requestBody || typeof requestBody !== "object" || !requestBody.renderProject) {
+  if (!requestBody || typeof requestBody !== "object") {
+    const response: RenderVideoErrorResult = {
+      success: false,
+      errorCode: "INVALID_REQUEST",
+      message: "Request body is required.",
+    };
+    return NextResponse.json(response, { status: 400 });
+  }
+
+  const mode = requestBody.mode === "remotion-test" ? "remotion-test" : "ffmpeg";
+
+  if (mode === "ffmpeg" && !requestBody.renderProject) {
     const response: RenderVideoErrorResult = {
       success: false,
       errorCode: "INVALID_REQUEST",
@@ -38,7 +51,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await renderVideoFromProject(requestBody.renderProject);
+    // TODO: Replace slideshow renderer with Remotion in Phase 4.5d.4
+    const result =
+      mode === "remotion-test"
+        ? await renderTestVideo()
+        : await renderVideoFromProject(requestBody.renderProject as RenderProject);
     const response: RenderVideoSuccessResult = result;
     return NextResponse.json(response);
   } catch (error) {

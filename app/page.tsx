@@ -155,6 +155,8 @@ type RenderPrototypeErrorResponse = {
   message: string;
 };
 
+type RenderMode = "ffmpeg" | "remotion-test";
+
 type SceneMotionDebugRow = {
   order: number;
   motionPreset: string;
@@ -1197,16 +1199,17 @@ export default function Home() {
       : undefined;
   const isRenderBusy = renderStatus === "loading";
 
-  async function handleRenderVideo() {
+  async function handleRenderVideo(mode: RenderMode = "ffmpeg") {
     if (isRenderBusy) {
       return;
     }
 
-    const renderProjectForRequest = buildRenderProjectFromCurrentState(
-      `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-    );
+    const renderProjectForRequest =
+      mode === "ffmpeg"
+        ? buildRenderProjectFromCurrentState(`${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
+        : buildRenderProjectFromCurrentState();
 
-    if (!renderProjectForRequest.isReady) {
+    if (mode === "ffmpeg" && !renderProjectForRequest.isReady) {
       setRenderStatus("error");
       setRenderError("Render project is not ready.");
       setRenderResult(null);
@@ -1219,12 +1222,16 @@ export default function Home() {
       return;
     }
 
-    setLastRenderMotionAssignments(
-      renderProjectForRequest.scenes.map((scene) => ({
-        order: scene.order,
-        motionPreset: scene.motionPreset || "static",
-      })),
-    );
+    if (mode === "ffmpeg") {
+      setLastRenderMotionAssignments(
+        renderProjectForRequest.scenes.map((scene) => ({
+          order: scene.order,
+          motionPreset: scene.motionPreset || "static",
+        })),
+      );
+    } else {
+      setLastRenderMotionAssignments([]);
+    }
     setRenderStatus("loading");
     setRenderError(null);
     setRenderResult(null);
@@ -1236,11 +1243,18 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ renderProject: renderProjectForRequest }),
+        body: JSON.stringify({
+          mode,
+          renderProject: mode === "ffmpeg" ? renderProjectForRequest : undefined,
+        }),
       });
     } catch {
       setRenderStatus("error");
-      setRenderError("Could not reach the local render route.");
+      setRenderError(
+        mode === "remotion-test"
+          ? "Could not reach the local render route for Remotion test rendering."
+          : "Could not reach the local render route.",
+      );
       return;
     }
 
@@ -2047,11 +2061,21 @@ export default function Home() {
                 type="button"
                 className={styles.buttonPrimary}
                 onClick={() => {
-                  void handleRenderVideo();
+                  void handleRenderVideo("ffmpeg");
                 }}
                 disabled={!renderProject.isReady || isRenderBusy}
               >
                 {isRenderBusy ? "Rendering..." : "Render Video"}
+              </button>
+              <button
+                type="button"
+                className={styles.smallButton}
+                onClick={() => {
+                  void handleRenderVideo("remotion-test");
+                }}
+                disabled={isRenderBusy}
+              >
+                {isRenderBusy ? "Rendering..." : "Remotion Test Render"}
               </button>
               <button
                 type="button"
