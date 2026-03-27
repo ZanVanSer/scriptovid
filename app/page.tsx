@@ -24,6 +24,11 @@ import {
   packSentencesIntoScenes,
 } from "@/modules/scene-splitter/scene-packer";
 import { SAMPLE_SCRIPT } from "@/modules/scene-splitter/sample-script";
+import {
+  createDefaultNarrationState,
+  type NarrationMode,
+  type NarrationState,
+} from "@/types/narration";
 import type { ScenePackResult } from "@/types/scene";
 import type { SentenceSplitResponse } from "@/types/sentence";
 
@@ -92,6 +97,7 @@ export default function Home() {
   const [sceneGenerationStates, setSceneGenerationStates] = useState<Record<number, SceneGenerationState>>(
     {},
   );
+  const [narration, setNarration] = useState<NarrationState>(createDefaultNarrationState);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{
     completed: number;
@@ -877,6 +883,40 @@ export default function Home() {
           ) : (
             <div className={styles.emptyState}>Split script and build scenes to review storyboard cards.</div>
           )}
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.sectionRow}>
+            <p className={styles.sectionTitle}>4. Narration</p>
+          </div>
+          <div className={styles.modeControls}>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Narration mode</span>
+              <select
+                className={styles.selectInput}
+                value={narration.mode}
+                onChange={(event) => {
+                  const nextMode = event.target.value as NarrationMode;
+                  setNarration((current) => ({
+                    ...current,
+                    mode: nextMode,
+                  }));
+                }}
+              >
+                <option value="manual">Manual upload</option>
+                <option value="elevenlabs">ElevenLabs</option>
+              </select>
+            </label>
+          </div>
+          <div className={styles.summaryGrid}>
+            <div className={styles.summaryItem}>Mode: {narration.mode}</div>
+            <div className={styles.summaryItem}>Status: {narration.status}</div>
+            <div className={styles.summaryItem}>File: {narration.fileName || "—"}</div>
+            <div className={styles.summaryItem}>
+              Duration: {typeof narration.duration === "number" ? formatSeconds(narration.duration) : "—"}
+            </div>
+          </div>
+          {narration.error ? <p className={styles.error}>Error: {narration.error}</p> : null}
         </section>
 
         <section className={styles.panel}>
