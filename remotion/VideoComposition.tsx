@@ -1,4 +1,4 @@
-import { Sequence } from "remotion";
+import { Audio, Sequence } from "remotion";
 
 import { SceneFrame } from "./components/SceneFrame";
 
@@ -13,6 +13,9 @@ export type RemotionRenderProps = {
   height: number;
   fps: number;
   scenes: RemotionRenderScene[];
+  narration?: {
+    audioUrl: string;
+  };
 };
 
 export const DEFAULT_REMOTION_RENDER_PROPS: RemotionRenderProps = {
@@ -26,6 +29,7 @@ export const DEFAULT_REMOTION_RENDER_PROPS: RemotionRenderProps = {
       durationFrames: 150,
     },
   ],
+  narration: undefined,
 };
 
 export function VideoComposition(props: RemotionRenderProps) {
@@ -33,6 +37,7 @@ export function VideoComposition(props: RemotionRenderProps) {
 
   return (
     <>
+      {props.narration?.audioUrl ? <Audio src={props.narration.audioUrl} /> : null}
       {props.scenes.map((scene) => {
         const from = timelineCursor;
         timelineCursor += scene.durationFrames;

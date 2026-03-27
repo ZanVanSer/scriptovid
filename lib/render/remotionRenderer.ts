@@ -2,7 +2,7 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { validateRenderProject } from "@/modules/video-renderer/render-project";
-import type { RenderProject, RenderScene } from "@/types/render-project";
+import type { RenderNarration, RenderProject, RenderScene } from "@/types/render-project";
 
 import type { RemotionRenderProps } from "@/remotion/VideoComposition";
 
@@ -39,12 +39,27 @@ function inferMimeTypeFromFilePath(filePath: string) {
   if (extension === ".svg") {
     return "image/svg+xml";
   }
+  if (extension === ".mp3") {
+    return "audio/mpeg";
+  }
+  if (extension === ".wav") {
+    return "audio/wav";
+  }
+  if (extension === ".m4a") {
+    return "audio/mp4";
+  }
+  if (extension === ".aac") {
+    return "audio/aac";
+  }
+  if (extension === ".ogg") {
+    return "audio/ogg";
+  }
   return "image/png";
 }
 
-async function localImageFileToDataUrl(filePath: string) {
+async function localFileToDataUrl(filePath: string, explicitMimeType?: string) {
   const fileBuffer = await readFile(filePath);
-  const mimeType = inferMimeTypeFromFilePath(filePath);
+  const mimeType = explicitMimeType || inferMimeTypeFromFilePath(filePath);
   return `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
 }
 
@@ -63,13 +78,37 @@ async function resolveSceneImageUrl(scene: RenderScene) {
     }
     if (normalizedUrl.startsWith("/")) {
       const publicFilePath = path.join(PUBLIC_DIRECTORY, normalizedUrl.slice(1));
-      return localImageFileToDataUrl(publicFilePath);
+      return localFileToDataUrl(publicFilePath);
     }
     throw new Error(`Scene ${scene.order} image URL must be absolute (/, http://, or https://).`);
   }
 
   const normalizedFilePath = path.normalize(mediaRef.value);
-  return localImageFileToDataUrl(normalizedFilePath);
+  return localFileToDataUrl(normalizedFilePath);
+}
+
+async function resolveNarrationAudioUrl(narration: RenderNarration) {
+  const mediaRef = narration.mediaRef;
+  if (mediaRef.kind === "url") {
+    const normalizedUrl = mediaRef.value.trim();
+    if (!normalizedUrl) {
+      throw new Error("Narration URL is empty.");
+    }
+    if (normalizedUrl.startsWith("data:audio/")) {
+      return normalizedUrl;
+    }
+    if (normalizedUrl.startsWith("http://") || normalizedUrl.startsWith("https://")) {
+      return normalizedUrl;
+    }
+    if (normalizedUrl.startsWith("/")) {
+      const publicFilePath = path.join(PUBLIC_DIRECTORY, normalizedUrl.slice(1));
+      return localFileToDataUrl(publicFilePath, narration.mimeType);
+    }
+    throw new Error("Narration URL must be absolute (/, http://, or https://).");
+  }
+
+  const normalizedFilePath = path.normalize(mediaRef.value);
+  return localFileToDataUrl(normalizedFilePath, narration.mimeType);
 }
 
 export async function convertRenderProjectToRemotionProps(
@@ -85,12 +124,32 @@ export async function convertRenderProjectToRemotionProps(
       durationFrames: secondsToFrames(scene.finalDuration, fps),
     })),
   );
+  const narration = renderProject.narration
+    ? {
+        audioUrl: await resolveNarrationAudioUrl(renderProject.narration),
+      }
+    : undefined;
+
+  const totalSceneFrames = scenes.reduce((sum, scene) => sum + scene.durationFrames, 0);
+  if (
+    renderProject.narrationDuration !== undefined &&
+    Number.isFinite(renderProject.narrationDuration) &&
+    renderProject.narrationDuration > 0
+  ) {
+    const narrationDurationFrames = secondsToFrames(renderProject.narrationDuration, fps);
+    if (Math.abs(totalSceneFrames - narrationDurationFrames) > 1) {
+      console.warn(
+        `[remotion-render] timeline/narration frame delta=${Math.abs(totalSceneFrames - narrationDurationFrames)}`,
+      );
+    }
+  }
 
   return {
     width,
     height,
     fps,
     scenes,
+    narration,
   };
 }
 
