@@ -14,16 +14,7 @@ export function buildFfmpegPrototypeArgs(input: BuildFfmpegPrototypeArgsInput) {
   const fps = renderProject.settings.fps;
   const orderedScenes = [...renderProject.scenes].sort((a, b) => a.order - b.order);
 
-  const inputArgs = orderedScenes.flatMap((scene) => [
-    "-loop",
-    "1",
-    "-framerate",
-    String(fps),
-    "-t",
-    String(scene.finalDuration),
-    "-i",
-    scene.image.mediaRef.value,
-  ]);
+  const inputArgs = orderedScenes.flatMap((scene) => ["-i", scene.image.mediaRef.value]);
   inputArgs.push("-i", narrationPath);
 
   const perSceneChains = orderedScenes

@@ -1989,7 +1989,7 @@ export default function Home() {
                 }}
               >
                 <option value="0.5">Slow</option>
-                <option value="0.75">Normal</option>
+                <option value="0.75">Medium</option>
                 <option value="1">Fast</option>
               </select>
             </label>
