@@ -49,6 +49,7 @@ type SceneGenerationState = {
   usedModel?: NanobananaModel;
   imageUrl?: string;
 };
+type BatchGenerationMode = "generate-all" | "regenerate-all" | "regenerate-failed";
 
 function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
@@ -92,7 +93,11 @@ export default function Home() {
     {},
   );
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{
+    completed: number;
+    total: number;
+    mode: BatchGenerationMode;
+  } | null>(null);
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -149,6 +154,9 @@ export default function Home() {
       ...current,
       [sceneIndex]: {
         status: "idle",
+        usedPrompt: current[sceneIndex]?.usedPrompt,
+        usedModel: current[sceneIndex]?.usedModel,
+        errorMessage: undefined,
         imageUrl: undefined,
       },
     }));
@@ -185,6 +193,9 @@ export default function Home() {
       ...current,
       [sceneIndex]: {
         status: "done",
+        usedPrompt: scenePrompts[sceneIndex] || current[sceneIndex]?.usedPrompt,
+        usedModel: nanobananaModel,
+        errorMessage: undefined,
         imageUrl: objectUrl,
       },
     }));
@@ -297,8 +308,29 @@ export default function Home() {
     }
   }
 
-  async function handleGenerateAllImages() {
+  function getBatchTargetScenes(mode: BatchGenerationMode) {
+    if (!scenePackResult) {
+      return [];
+    }
+
+    if (mode === "regenerate-all") {
+      return scenePackResult.scenes;
+    }
+
+    if (mode === "regenerate-failed") {
+      return scenePackResult.scenes.filter((scene) => getSceneGenerationStatus(scene.index).status === "error");
+    }
+
+    return scenePackResult.scenes.filter((scene) => !sceneImages[scene.index]);
+  }
+
+  async function runBatchGeneration(mode: BatchGenerationMode) {
     if (!scenePackResult || scenePackResult.scenes.length === 0) {
+      return;
+    }
+
+    const targetScenes = getBatchTargetScenes(mode);
+    if (targetScenes.length === 0) {
       return;
     }
 
@@ -308,7 +340,7 @@ export default function Home() {
         "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or provide a local override key.";
       setSceneGenerationStates((current) => {
         const next = { ...current };
-        scenePackResult.scenes.forEach((scene) => {
+        targetScenes.forEach((scene) => {
           next[scene.index] = {
             status: "error",
             errorMessage: message,
@@ -321,7 +353,7 @@ export default function Home() {
       });
       setSceneImageErrors((current) => {
         const next = { ...current };
-        scenePackResult.scenes.forEach((scene) => {
+        targetScenes.forEach((scene) => {
           next[scene.index] = message;
         });
         return next;
@@ -330,15 +362,16 @@ export default function Home() {
     }
 
     setIsBatchGenerating(true);
-    setBatchProgress({ completed: 0, total: scenePackResult.scenes.length });
+    setBatchProgress({ completed: 0, total: targetScenes.length, mode });
 
-    for (let index = 0; index < scenePackResult.scenes.length; index += 1) {
-      const scene = scenePackResult.scenes[index];
+    for (let index = 0; index < targetScenes.length; index += 1) {
+      const scene = targetScenes[index];
       const prompt = scenePrompts[scene.index] || scene.text;
       await generateSceneImage(scene.index, prompt, apiKey);
       setBatchProgress({
         completed: index + 1,
-        total: scenePackResult.scenes.length,
+        total: targetScenes.length,
+        mode,
       });
     }
 
@@ -453,6 +486,33 @@ export default function Home() {
 
   function getSceneGenerationStatus(sceneIndex: number): SceneGenerationState {
     return sceneGenerationStates[sceneIndex] || { status: "idle" };
+  }
+
+  function getPerSceneGenerateLabel(sceneIndex: number) {
+    const sceneState = getSceneGenerationStatus(sceneIndex);
+    if (sceneState.status === "loading") {
+      return "Generating...";
+    }
+
+    if (sceneState.status === "error") {
+      return "Retry";
+    }
+
+    if (sceneImages[sceneIndex]) {
+      return "Regenerate";
+    }
+
+    return "Generate";
+  }
+
+  function formatBatchMode(mode: BatchGenerationMode) {
+    if (mode === "regenerate-all") {
+      return "regenerate all";
+    }
+    if (mode === "regenerate-failed") {
+      return "regenerate failed";
+    }
+    return "generate all";
   }
 
   const generationSummary = useMemo(() => {
@@ -641,13 +701,33 @@ export default function Home() {
               <button
                 type="button"
                 className={styles.buttonPrimary}
-                onClick={handleGenerateAllImages}
+                onClick={() => runBatchGeneration("generate-all")}
                 disabled={!scenePackResult || scenePackResult.scenes.length === 0 || isBatchGenerating}
               >
-                {isBatchGenerating && batchProgress
-                  ? `Generating ${batchProgress.completed}/${batchProgress.total}...`
-                  : "Generate all images"}
+                Generate all images
               </button>
+              <button
+                type="button"
+                className={styles.button}
+                onClick={() => runBatchGeneration("regenerate-all")}
+                disabled={!scenePackResult || scenePackResult.scenes.length === 0 || isBatchGenerating}
+              >
+                Regenerate all images
+              </button>
+              <button
+                type="button"
+                className={styles.button}
+                onClick={() => runBatchGeneration("regenerate-failed")}
+                disabled={!scenePackResult || scenePackResult.scenes.length === 0 || isBatchGenerating}
+              >
+                Regenerate failed images
+              </button>
+              {isBatchGenerating && batchProgress ? (
+                <p className={styles.modeNote}>
+                  Running {formatBatchMode(batchProgress.mode)}: {batchProgress.completed}/
+                  {batchProgress.total}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {scenePackResult && scenePackResult.scenes.length > 0 ? (
@@ -661,39 +741,25 @@ export default function Home() {
                   <div
                     className={`${styles.imagePlaceholder} ${
                       activeDropSceneIndex === scene.index ? styles.imagePlaceholderActive : ""
-                    } ${imageSourceMode === "manual" ? styles.imagePlaceholderClickable : ""}`}
+                    } ${styles.imagePlaceholderClickable}`}
                     onClick={() => {
-                      if (imageSourceMode === "manual") {
-                        openSceneFilePicker(scene.index);
-                      }
+                      openSceneFilePicker(scene.index);
                     }}
                     onDragEnter={(event) => {
-                      if (imageSourceMode !== "manual") {
-                        return;
-                      }
                       event.preventDefault();
                       setActiveDropSceneIndex(scene.index);
                     }}
                     onDragOver={(event) => {
-                      if (imageSourceMode !== "manual") {
-                        return;
-                      }
                       event.preventDefault();
                       setActiveDropSceneIndex(scene.index);
                     }}
                     onDragLeave={(event) => {
-                      if (imageSourceMode !== "manual") {
-                        return;
-                      }
                       event.preventDefault();
                       if (activeDropSceneIndex === scene.index) {
                         setActiveDropSceneIndex(null);
                       }
                     }}
                     onDrop={(event) => {
-                      if (imageSourceMode !== "manual") {
-                        return;
-                      }
                       event.preventDefault();
                       setActiveDropSceneIndex(null);
                       const file = event.dataTransfer.files.item(0);
@@ -716,37 +782,20 @@ export default function Home() {
                       </p>
                     )}
                   </div>
-                  {imageSourceMode === "manual" ? (
-                    <>
-                      <input
-                        id={`scene-upload-${scene.index}`}
-                        type="file"
-                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
-                        className={styles.fileInput}
-                        onChange={(event) => {
-                          const file = event.target.files?.item(0);
-                          if (file) {
-                            applySceneImageFile(scene.index, file);
-                          }
-                          event.target.value = "";
-                        }}
-                      />
-                      <div className={styles.cardActions}>
-                        <label htmlFor={`scene-upload-${scene.index}`} className={styles.smallButton}>
-                          {sceneImages[scene.index] ? "Replace" : "Upload"}
-                        </label>
-                        {sceneImages[scene.index] ? (
-                          <button
-                            type="button"
-                            className={styles.smallButton}
-                            onClick={() => removeSceneImage(scene.index)}
-                          >
-                            Remove
-                          </button>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : (
+                  <input
+                    id={`scene-upload-${scene.index}`}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                    className={styles.fileInput}
+                    onChange={(event) => {
+                      const file = event.target.files?.item(0);
+                      if (file) {
+                        applySceneImageFile(scene.index, file);
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                  {imageSourceMode === "nanobanana" ? (
                     <div className={styles.cardActions}>
                       <button
                         type="button"
@@ -756,22 +805,28 @@ export default function Home() {
                         }
                         onClick={() => generateSceneImage(scene.index, scenePrompts[scene.index] || scene.text)}
                       >
-                        {getSceneGenerationStatus(scene.index).status === "loading"
-                          ? "Generating..."
-                          : "Generate image"}
+                        {getPerSceneGenerateLabel(scene.index)}
                       </button>
-                      {sceneImages[scene.index] ? (
-                        <button
-                          type="button"
-                          className={styles.smallButton}
-                          onClick={() => removeSceneImage(scene.index)}
-                        >
-                          Remove
-                        </button>
-                      ) : null}
-                      <p className={styles.modeNote}>Uses selected style + model for this scene only.</p>
+                      <p className={styles.modeNote}>Uses selected style + model for this scene.</p>
                     </div>
-                  )}
+                  ) : null}
+                  <div className={styles.cardActions}>
+                    <label htmlFor={`scene-upload-${scene.index}`} className={styles.smallButton}>
+                      {sceneImages[scene.index] ? "Replace" : "Upload"}
+                    </label>
+                    {sceneImages[scene.index] ? (
+                      <button
+                        type="button"
+                        className={styles.smallButton}
+                        onClick={() => removeSceneImage(scene.index)}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                    {imageSourceMode === "nanobanana" ? (
+                      <p className={styles.modeNote}>Manual upload can override generated result.</p>
+                    ) : null}
+                  </div>
                   {sceneImages[scene.index] ? (
                     <p className={styles.fileMeta}>{sceneImages[scene.index].label}</p>
                   ) : null}
