@@ -15,6 +15,7 @@ import {
   buildSceneImagePrompt,
   type VisualStylePresetId,
 } from "@/modules/image-generation/prompt-builder";
+import { MOTION_PRESETS, MOTION_PRESET_IDS } from "@/modules/video-renderer/motion-presets";
 import { buildRenderProject } from "@/modules/video-renderer/render-project";
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
@@ -32,6 +33,7 @@ import {
   type NarrationMode,
   type NarrationState,
 } from "@/types/narration";
+import type { MotionPresetId } from "@/types/render-project";
 import type { ScenePackResult } from "@/types/scene";
 import type { SentenceSplitResponse } from "@/types/sentence";
 
@@ -304,6 +306,8 @@ export default function Home() {
   const [renderError, setRenderError] = useState<string | null>(null);
   const [isClearingGenerated, setIsClearingGenerated] = useState(false);
   const [clearGeneratedMessage, setClearGeneratedMessage] = useState<string | null>(null);
+  const [motionEnabled, setMotionEnabled] = useState(true);
+  const [allowedMotionPresetIds, setAllowedMotionPresetIds] = useState<MotionPresetId[]>(MOTION_PRESET_IDS);
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -1161,9 +1165,15 @@ export default function Home() {
         scenePackResult,
         sceneImages,
         narration,
+        motionSettings: {
+          enabled: motionEnabled,
+          allowedPresetIds: allowedMotionPresetIds,
+          assignmentMode: "deterministic-random",
+        },
       }),
-    [scenePackResult, sceneImages, narration],
+    [scenePackResult, sceneImages, narration, motionEnabled, allowedMotionPresetIds],
   );
+  const assignedMotionCount = renderProject.scenes.filter((scene) => scene.motionPreset).length;
   const durationDeltaSeconds =
     typeof activeNarrationAsset?.duration === "number" &&
     typeof result?.totalEstimatedDurationSeconds === "number"
@@ -1252,6 +1262,15 @@ export default function Home() {
     setRenderError(null);
     setClearGeneratedMessage(payload.message);
     setIsClearingGenerated(false);
+  }
+
+  function toggleAllowedMotionPreset(presetId: MotionPresetId) {
+    setAllowedMotionPresetIds((current) => {
+      if (current.includes(presetId)) {
+        return current.filter((candidate) => candidate !== presetId);
+      }
+      return [...current, presetId];
+    });
   }
 
   return (
@@ -1900,6 +1919,32 @@ export default function Home() {
         <section className={styles.panel}>
           <div className={styles.sectionRow}>
             <p className={styles.sectionTitle}>5. Render / Export</p>
+          </div>
+          <div className={styles.motionSection}>
+            <label className={styles.checkboxField}>
+              <input
+                type="checkbox"
+                checked={motionEnabled}
+                onChange={(event) => setMotionEnabled(event.target.checked)}
+              />
+              <span className={styles.fieldLabel}>Enable motion effects</span>
+            </label>
+            <div className={styles.motionPresetGrid}>
+              {MOTION_PRESETS.map((preset) => (
+                <label key={preset.id} className={styles.checkboxField}>
+                  <input
+                    type="checkbox"
+                    checked={allowedMotionPresetIds.includes(preset.id)}
+                    disabled={!motionEnabled}
+                    onChange={() => toggleAllowedMotionPreset(preset.id)}
+                  />
+                  <span className={styles.fieldLabel}>{preset.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className={styles.info}>
+              Assigned presets: {assignedMotionCount}/{renderProject.scenes.length}
+            </p>
           </div>
           <div className={styles.renderSummary}>
             <div className={styles.summaryGrid}>

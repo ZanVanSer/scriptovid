@@ -403,6 +403,21 @@
   gap: 8px;
 }
 
+.motionSection {
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: #fafaf9;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.motionPresetGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
 .renderIssueList {
   margin: 0;
   padding-left: 16px;
@@ -505,6 +520,10 @@
   }
 
   .controlsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .motionPresetGrid {
     grid-template-columns: 1fr;
   }
 

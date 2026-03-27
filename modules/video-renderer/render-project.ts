@@ -1,6 +1,11 @@
+import {
+  assignDeterministicMotionPreset,
+  normalizeAllowedMotionPresetIds,
+} from "@/modules/video-renderer/motion-presets";
 import type { NarrationState } from "@/types/narration";
 import {
   DEFAULT_RENDER_SETTINGS,
+  type MotionSettings,
   type RenderImageAsset,
   type RenderMediaRef,
   type RenderNarration,
@@ -26,6 +31,7 @@ export type RenderProjectAppState = {
   narration: NarrationState;
   settings?: Partial<RenderSettings>;
   timingStrategy?: "estimated" | "scale-to-narration" | "auto";
+  motionSettings?: Partial<MotionSettings>;
 };
 
 function isPositiveDuration(value: number) {
@@ -129,6 +135,20 @@ function getMediaRefRenderabilityStatus(mediaRef: RenderMediaRef): "ok" | "error
 
 function createIssue(code: string, message: string, level: RenderValidationIssue["level"]): RenderValidationIssue {
   return { code, message, level };
+}
+
+function resolveMotionSettings(appState: RenderProjectAppState): MotionSettings {
+  const mergedMotion = {
+    ...DEFAULT_RENDER_SETTINGS.motion,
+    ...(appState.settings?.motion || {}),
+    ...(appState.motionSettings || {}),
+  };
+
+  return {
+    enabled: Boolean(mergedMotion.enabled),
+    allowedPresetIds: normalizeAllowedMotionPresetIds(mergedMotion.allowedPresetIds || []),
+    assignmentMode: "deterministic-random",
+  };
 }
 
 function isFinitePositiveNumber(value: number | undefined) {
@@ -257,6 +277,16 @@ export function validateRenderProject(
     );
   }
 
+  if (renderProject.settings.motion.enabled && renderProject.settings.motion.allowedPresetIds.length === 0) {
+    issues.push(
+      createIssue(
+        "MOTION_PRESET_POOL_EMPTY",
+        "Motion effects are enabled, but no motion presets are selected.",
+        "warning",
+      ),
+    );
+  }
+
   const largeMismatchIssue = getLargeDurationMismatchIssue(
     renderProject.totalFinalSceneDuration,
     renderProject.narrationDuration,
@@ -283,9 +313,11 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
   }));
 
   const narration = normalizeNarrationAsset(appState.narration);
+  const motionSettings = resolveMotionSettings(appState);
   const settings: RenderSettings = {
     ...DEFAULT_RENDER_SETTINGS,
     ...appState.settings,
+    motion: motionSettings,
   };
 
   const totalEstimatedSceneDuration = estimatedScenes.reduce((sum, scene) => sum + scene.estimatedDuration, 0);
@@ -322,13 +354,25 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
       ? (narrationDuration as number) / totalEstimatedSceneDuration
       : undefined;
 
-  const scenes =
+  const timingAdjustedScenes =
     scaleFactor !== undefined
       ? estimatedScenes.map((scene) => ({
           ...scene,
           finalDuration: scene.estimatedDuration * scaleFactor,
         }))
       : estimatedScenes;
+
+  const scenes = timingAdjustedScenes.map((scene) => {
+    const motionPreset =
+      motionSettings.enabled && motionSettings.allowedPresetIds.length > 0
+        ? assignDeterministicMotionPreset(scene.id, scene.order, motionSettings.allowedPresetIds)
+        : undefined;
+
+    return {
+      ...scene,
+      motionPreset,
+    };
+  });
 
   const totalFinalSceneDuration = scenes.reduce((sum, scene) => sum + scene.finalDuration, 0);
 

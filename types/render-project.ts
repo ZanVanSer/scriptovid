@@ -3,6 +3,14 @@ export type RenderMediaRef = {
   value: string;
 };
 
+export type MotionPresetId = "zoom-in" | "zoom-out" | "pan-left" | "pan-right" | "pan-up" | "pan-down";
+
+export type MotionSettings = {
+  enabled: boolean;
+  allowedPresetIds: MotionPresetId[];
+  assignmentMode: "deterministic-random";
+};
+
 export type RenderImageAsset = {
   source: "manual" | "generated";
   mediaRef: RenderMediaRef;
@@ -18,6 +26,7 @@ export type RenderScene = {
   text: string;
   estimatedDuration: number;
   finalDuration: number;
+  motionPreset?: MotionPresetId;
   image: RenderImageAsset;
 };
 
@@ -39,6 +48,7 @@ export type RenderSettings = {
   container: "mp4";
   videoCodec: "h264";
   audioCodec: "aac";
+  motion: MotionSettings;
 };
 
 export type RenderValidationIssue = {
@@ -67,4 +77,9 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   container: "mp4",
   videoCodec: "h264",
   audioCodec: "aac",
+  motion: {
+    enabled: true,
+    allowedPresetIds: ["zoom-in", "zoom-out", "pan-left", "pan-right", "pan-up", "pan-down"],
+    assignmentMode: "deterministic-random",
+  },
 };
