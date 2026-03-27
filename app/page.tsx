@@ -15,7 +15,7 @@ import {
   buildSceneImagePrompt,
   type VisualStylePresetId,
 } from "@/modules/image-generation/prompt-builder";
-import { MOTION_PRESETS, MOTION_PRESET_IDS } from "@/modules/video-renderer/motion-presets";
+import { MOTION_PRESETS, MOTION_PRESET_IDS } from "@/lib/motion/motionPresets";
 import { buildRenderProject } from "@/modules/video-renderer/render-project";
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
@@ -315,7 +315,6 @@ export default function Home() {
   const [motionEnabled, setMotionEnabled] = useState(true);
   const [allowedMotionPresetIds, setAllowedMotionPresetIds] = useState<MotionPresetId[]>(MOTION_PRESET_IDS);
   const [motionSpeed, setMotionSpeed] = useState<0.5 | 0.75 | 1>(0.75);
-  const [motionAssignmentSalt, setMotionAssignmentSalt] = useState("initial");
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -1167,7 +1166,7 @@ export default function Home() {
 
   const activeNarrationAsset: NarrationAsset | undefined = narration.asset;
   const isNarrationReady = isNarrationReadyForRender(narration);
-  function buildRenderProjectFromCurrentState(assignmentSalt: string) {
+  function buildRenderProjectFromCurrentState(motionAssignmentSalt?: string) {
     return buildRenderProject({
       scenePackResult,
       sceneImages,
@@ -1175,25 +1174,21 @@ export default function Home() {
       motionSettings: {
         enabled: motionEnabled,
         allowedPresetIds: allowedMotionPresetIds,
-        assignmentMode: "deterministic-random",
+        assignmentMode: "deterministic-by-scene-index",
         speed: motionSpeed,
       },
-      motionAssignmentSalt: assignmentSalt,
+      motionAssignmentSalt,
     });
   }
 
-  const renderProject = useMemo(
-    () => buildRenderProjectFromCurrentState(motionAssignmentSalt),
-    [
-      scenePackResult,
-      sceneImages,
-      narration,
-      motionEnabled,
-      allowedMotionPresetIds,
-      motionSpeed,
-      motionAssignmentSalt,
-    ],
-  );
+  const renderProject = useMemo(() => buildRenderProjectFromCurrentState(), [
+    scenePackResult,
+    sceneImages,
+    narration,
+    motionEnabled,
+    allowedMotionPresetIds,
+    motionSpeed,
+  ]);
   const assignedMotionCount = renderProject.scenes.filter((scene) => scene.motionPreset).length;
   const durationDeltaSeconds =
     typeof activeNarrationAsset?.duration === "number" &&
@@ -1207,9 +1202,9 @@ export default function Home() {
       return;
     }
 
-    const nextSalt = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const renderProjectForRequest = buildRenderProjectFromCurrentState(nextSalt);
-    setMotionAssignmentSalt(nextSalt);
+    const renderProjectForRequest = buildRenderProjectFromCurrentState(
+      `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    );
 
     if (!renderProjectForRequest.isReady) {
       setRenderStatus("error");
@@ -2002,7 +1997,7 @@ export default function Home() {
                     disabled={!motionEnabled}
                     onChange={() => toggleAllowedMotionPreset(preset.id)}
                   />
-                  <span className={styles.fieldLabel}>{preset.label}</span>
+                  <span className={styles.fieldLabel}>{preset.name}</span>
                 </label>
               ))}
             </div>

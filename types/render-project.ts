@@ -3,12 +3,20 @@ export type RenderMediaRef = {
   value: string;
 };
 
-export type MotionPresetId = "zoom-in" | "zoom-out" | "pan-left" | "pan-right" | "pan-up" | "pan-down";
+export type MotionPresetId =
+  | "slow-zoom-in"
+  | "slow-zoom-out"
+  | "pan-left-subtle"
+  | "pan-right-subtle"
+  | "pan-up-subtle"
+  | "pan-down-subtle"
+  | "drift-left-zoom-in"
+  | "drift-right-zoom-in";
 
 export type MotionSettings = {
   enabled: boolean;
   allowedPresetIds: MotionPresetId[];
-  assignmentMode: "deterministic-random";
+  assignmentMode: "deterministic-by-scene-index";
   speed: 0.5 | 0.75 | 1;
 };
 
@@ -80,8 +88,17 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   audioCodec: "aac",
   motion: {
     enabled: true,
-    allowedPresetIds: ["zoom-in", "zoom-out", "pan-left", "pan-right", "pan-up", "pan-down"],
-    assignmentMode: "deterministic-random",
+    allowedPresetIds: [
+      "slow-zoom-in",
+      "slow-zoom-out",
+      "pan-left-subtle",
+      "pan-right-subtle",
+      "pan-up-subtle",
+      "pan-down-subtle",
+      "drift-left-zoom-in",
+      "drift-right-zoom-in",
+    ],
+    assignmentMode: "deterministic-by-scene-index",
     speed: 0.75,
   },
 };

@@ -1,3 +1,5 @@
+import { getMotionPresetById, type MotionPreset } from "@/lib/motion/motionPresets";
+import { computeMotionFromPreset } from "@/lib/render/motionPlanner";
 import type { MotionPresetId, RenderScene } from "@/types/render-project";
 
 type BuildSceneMotionFilterInput = {
@@ -9,153 +11,119 @@ type BuildSceneMotionFilterInput = {
   motionSpeed: 0.5 | 0.75 | 1;
 };
 
-function toEven(value: number) {
-  const rounded = Math.round(value);
-  return rounded % 2 === 0 ? rounded : rounded + 1;
+export type SceneMotionDebugInfo = {
+  sceneIndex: number;
+  presetId: MotionPresetId | "static";
+  workingWidth: number;
+  workingHeight: number;
+  startCropX: number;
+  endCropX: number;
+  startCropY: number;
+  endCropY: number;
+  duration: number;
+};
+
+type SceneMotionFilterResult = {
+  filter: string;
+  debug: SceneMotionDebugInfo;
+};
+
+function toEvenFloor(value: number) {
+  const floored = Math.floor(value);
+  return floored % 2 === 0 ? floored : floored - 1;
 }
 
-function getSpeedTuning(motionSpeed: 0.5 | 0.75 | 1) {
-  if (motionSpeed === 0.5) {
-    return { zoomDelta: 0.05, panOverscan: 0.1, panMinTravelPx: 36 };
+function getSafeDuration(duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return 0.001;
   }
-  if (motionSpeed === 1) {
-    return { zoomDelta: 0.1, panOverscan: 0.22, panMinTravelPx: 96 };
-  }
-  return { zoomDelta: 0.075, panOverscan: 0.16, panMinTravelPx: 68 };
+  return duration;
 }
 
-function getSceneFrames(duration: number, fps: number) {
-  const normalizedDuration = Number.isFinite(duration) && duration > 0 ? duration : 0.001;
-  return Math.max(2, Math.round(normalizedDuration * fps));
-}
-
-function buildPrepFilter(width: number, height: number, overscanScale: number) {
-  const sourceWidth = toEven(width * overscanScale);
-  const sourceHeight = toEven(height * overscanScale);
+function getStaticPreset(): MotionPreset {
   return {
-    filter: `scale=${sourceWidth}:${sourceHeight}:force_original_aspect_ratio=increase,crop=${sourceWidth}:${sourceHeight}`,
-    sourceWidth,
-    sourceHeight,
+    id: "slow-zoom-in",
+    name: "Static",
+    startScale: 1,
+    endScale: 1,
+    startX: 0,
+    endX: 0,
+    startY: 0,
+    endY: 0,
+    easing: "linear",
   };
 }
 
-function buildZoompanExpressions(
-  preset: MotionPresetId | undefined,
-  sourceWidth: number,
-  sourceHeight: number,
-  outputWidth: number,
-  outputHeight: number,
-  frames: number,
-  zoomDelta: number,
-  panMinTravelPx: number,
-  motionEnabled: boolean,
-) {
-  const denominator = frames - 1;
-  const progress = `on/${denominator}`;
-  const eased = `(${progress})*(${progress})*(3-2*(${progress}))`;
-  const maxPanX = Math.max(sourceWidth - outputWidth, 0);
-  const maxPanY = Math.max(sourceHeight - outputHeight, 0);
-  const centerX = maxPanX / 2;
-  const centerY = maxPanY / 2;
-  const travelX = Math.max(0, Math.min(maxPanX * 0.92, Math.max(panMinTravelPx, maxPanX * 0.6)));
-  const travelY = Math.max(0, Math.min(maxPanY * 0.92, Math.max(panMinTravelPx, maxPanY * 0.6)));
-
-  if (!motionEnabled || !preset) {
-    return {
-      z: "1",
-      x: `${centerX}`,
-      y: `${centerY}`,
-    };
-  }
-
-  if (preset === "zoom-in") {
-    return {
-      z: `1+${zoomDelta.toFixed(4)}*(${eased})`,
-      x: "(iw/2)-(iw/zoom/2)",
-      y: "(ih/2)-(ih/zoom/2)",
-    };
-  }
-
-  if (preset === "zoom-out") {
-    return {
-      z: `1+${zoomDelta.toFixed(4)}*(1-(${eased}))`,
-      x: "(iw/2)-(iw/zoom/2)",
-      y: "(ih/2)-(ih/zoom/2)",
-    };
-  }
-
-  if (preset === "pan-left") {
-    const startX = centerX + travelX / 2;
-    return {
-      z: "1",
-      x: `${startX}-${travelX}*(${eased})`,
-      y: `${centerY}`,
-    };
-  }
-
-  if (preset === "pan-right") {
-    const startX = centerX - travelX / 2;
-    return {
-      z: "1",
-      x: `${startX}+${travelX}*(${eased})`,
-      y: `${centerY}`,
-    };
-  }
-
-  if (preset === "pan-up") {
-    const startY = centerY + travelY / 2;
-    return {
-      z: "1",
-      x: `${centerX}`,
-      y: `${startY}-${travelY}*(${eased})`,
-    };
-  }
-
-  if (preset === "pan-down") {
-    const startY = centerY - travelY / 2;
-    return {
-      z: "1",
-      x: `${centerX}`,
-      y: `${startY}+${travelY}*(${eased})`,
-    };
-  }
-
-  return {
-    z: "1",
-    x: `${centerX}`,
-    y: `${centerY}`,
-  };
+function toFixed(value: number, precision = 3) {
+  return Number.isFinite(value) ? value.toFixed(precision) : "0.000";
 }
 
-export function buildSceneMotionFilter(input: BuildSceneMotionFilterInput) {
+function escapeFilterExpression(value: string) {
+  return value.replaceAll(",", "\\,");
+}
+
+function buildProgressExpression(duration: number, fps: number) {
+  const totalFrames = Math.max(1, Math.round(duration * fps));
+  return `min(max(n/${toFixed(totalFrames, 0)},0),1)`;
+}
+
+function buildNormalizedCoordinateExpression(startNorm: number, endNorm: number, progress: string, axis: "x" | "y") {
+  const startValue = Number.isFinite(startNorm) ? startNorm : 0;
+  const endValue = Number.isFinite(endNorm) ? endNorm : 0;
+  const delta = endValue - startValue;
+  const dimension = axis === "x" ? "iw" : "ih";
+  const output = axis === "x" ? "ow" : "oh";
+  const travel = `(${dimension}-${output})`;
+  const normalized = `${toFixed(startValue, 6)}+(${toFixed(delta, 6)})*(${progress})`;
+  return escapeFilterExpression(`min(max(((${normalized})+0.5)*${travel},0),${travel})`);
+}
+
+function buildScaleExpression(startScale: number, endScale: number, progress: string) {
+  const start = Number.isFinite(startScale) ? Math.max(1, startScale) : 1;
+  const end = Number.isFinite(endScale) ? Math.max(1, endScale) : 1;
+  const delta = end - start;
+  return `${toFixed(start, 6)}+(${toFixed(delta, 6)})*(${progress})`;
+}
+
+export function buildSceneMotionFilter(input: BuildSceneMotionFilterInput): SceneMotionFilterResult {
   const { scene, width, height, fps, motionEnabled, motionSpeed } = input;
-  const { zoomDelta, panOverscan, panMinTravelPx } = getSpeedTuning(motionSpeed);
-  const hasPanPreset =
-    scene.motionPreset === "pan-left" ||
-    scene.motionPreset === "pan-right" ||
-    scene.motionPreset === "pan-up" ||
-    scene.motionPreset === "pan-down";
+  void motionSpeed;
+  const outputWidth = Math.max(2, toEvenFloor(width));
+  const outputHeight = Math.max(2, toEvenFloor(height));
+  const duration = getSafeDuration(scene.finalDuration);
+  const preset = motionEnabled ? getMotionPresetById(scene.motionPreset) || getStaticPreset() : getStaticPreset();
+  const computed = computeMotionFromPreset({
+    outputWidth,
+    outputHeight,
+    preset,
+  });
+  const progressExpr = buildProgressExpression(duration, fps);
+  const xExpr = buildNormalizedCoordinateExpression(preset.startX, preset.endX, progressExpr, "x");
+  const yExpr = buildNormalizedCoordinateExpression(preset.startY, preset.endY, progressExpr, "y");
+  const scaleExpr = buildScaleExpression(preset.startScale, preset.endScale, progressExpr);
 
-  // Use larger source area for pan so movement stays smooth with non-trivial travel.
-  const overscanScale = hasPanPreset ? 1 + panOverscan : 1 + zoomDelta + 0.04;
-  const prep = buildPrepFilter(width, height, overscanScale);
-  const frames = getSceneFrames(scene.finalDuration, fps);
-  const expressions = buildZoompanExpressions(
-    scene.motionPreset,
-    prep.sourceWidth,
-    prep.sourceHeight,
-    width,
-    height,
-    frames,
-    zoomDelta,
-    panMinTravelPx,
-    motionEnabled,
-  );
-
-  return [
-    prep.filter,
-    `zoompan=z='${expressions.z}':x='${expressions.x}':y='${expressions.y}':d=${frames}:s=${width}x${height}:fps=${fps}`,
+  const filter = [
+    `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase`,
+    `crop=${outputWidth}:${outputHeight}`,
+    `scale=w='trunc(${outputWidth}*(${scaleExpr})/2)*2':h='trunc(${outputHeight}*(${scaleExpr})/2)*2':eval=frame`,
+    `crop=${outputWidth}:${outputHeight}:${xExpr}:${yExpr}`,
+    `fps=${fps}`,
     "format=yuv420p",
     "setsar=1",
   ].join(",");
+
+  return {
+    filter,
+    debug: {
+      sceneIndex: Math.max(0, scene.order - 1),
+      presetId: motionEnabled && scene.motionPreset ? scene.motionPreset : "static",
+      workingWidth: computed.workingWidth,
+      workingHeight: computed.workingHeight,
+      startCropX: computed.startCropX,
+      endCropX: computed.endCropX,
+      startCropY: computed.startCropY,
+      endCropY: computed.endCropY,
+      duration,
+    },
+  };
 }

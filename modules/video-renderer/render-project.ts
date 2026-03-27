@@ -1,7 +1,7 @@
 import {
-  assignDeterministicMotionPresetNoAdjacentRepeat,
+  assignDeterministicMotionPresetBySceneIndex,
   normalizeAllowedMotionPresetIds,
-} from "@/modules/video-renderer/motion-presets";
+} from "@/lib/motion/motionPresets";
 import type { NarrationState } from "@/types/narration";
 import {
   DEFAULT_RENDER_SETTINGS,
@@ -148,7 +148,7 @@ function resolveMotionSettings(appState: RenderProjectAppState): MotionSettings 
   return {
     enabled: Boolean(mergedMotion.enabled),
     allowedPresetIds: normalizeAllowedMotionPresetIds(mergedMotion.allowedPresetIds || []),
-    assignmentMode: "deterministic-random",
+    assignmentMode: "deterministic-by-scene-index",
     speed: mergedMotion.speed === 0.5 || mergedMotion.speed === 1 ? mergedMotion.speed : 0.75,
   };
 }
@@ -364,15 +364,12 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
         }))
       : estimatedScenes;
 
-  const scenes = timingAdjustedScenes.reduce<RenderProject["scenes"]>((acc, scene) => {
-    const previousPresetId = acc[acc.length - 1]?.motionPreset;
+  const scenes = timingAdjustedScenes.reduce<RenderProject["scenes"]>((acc, scene, sceneIndex) => {
     const motionPreset =
       motionSettings.enabled && motionSettings.allowedPresetIds.length > 0
-        ? assignDeterministicMotionPresetNoAdjacentRepeat(
-            scene.id,
-            scene.order,
+        ? assignDeterministicMotionPresetBySceneIndex(
+            sceneIndex,
             motionSettings.allowedPresetIds,
-            previousPresetId,
             appState.motionAssignmentSalt,
           )
         : undefined;

@@ -14,12 +14,21 @@ export function buildFfmpegPrototypeArgs(input: BuildFfmpegPrototypeArgsInput) {
   const fps = renderProject.settings.fps;
   const orderedScenes = [...renderProject.scenes].sort((a, b) => a.order - b.order);
 
-  const inputArgs = orderedScenes.flatMap((scene) => ["-i", scene.image.mediaRef.value]);
+  const inputArgs = orderedScenes.flatMap((scene) => [
+    "-framerate",
+    String(fps),
+    "-loop",
+    "1",
+    "-t",
+    scene.finalDuration.toFixed(3),
+    "-i",
+    scene.image.mediaRef.value,
+  ]);
   inputArgs.push("-i", narrationPath);
 
   const perSceneChains = orderedScenes
     .map((scene, index) => {
-      const filter = buildSceneMotionFilter({
+      const { filter, debug } = buildSceneMotionFilter({
         scene,
         width,
         height,
@@ -27,6 +36,14 @@ export function buildFfmpegPrototypeArgs(input: BuildFfmpegPrototypeArgsInput) {
         motionEnabled: renderProject.settings.motion.enabled,
         motionSpeed: renderProject.settings.motion.speed,
       });
+      // Scene-level debug traces help verify deterministic preset assignment and crop bounds.
+      console.debug(
+        `[render-motion] scene=${debug.sceneIndex} preset=${debug.presetId} ` +
+          `working=${debug.workingWidth}x${debug.workingHeight} ` +
+          `cropX=${debug.startCropX.toFixed(2)}->${debug.endCropX.toFixed(2)} ` +
+          `cropY=${debug.startCropY.toFixed(2)}->${debug.endCropY.toFixed(2)} ` +
+          `duration=${debug.duration.toFixed(3)}s`,
+      );
       return `[${index}:v]${filter}[v${index}]`;
     })
     .join(";");
