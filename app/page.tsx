@@ -153,6 +153,17 @@ type RenderPrototypeErrorResponse = {
   message: string;
 };
 
+type ClearGeneratedSuccessResponse = {
+  success: true;
+  message: string;
+};
+
+type ClearGeneratedErrorResponse = {
+  success: false;
+  errorCode: string;
+  message: string;
+};
+
 function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
 }
@@ -291,6 +302,8 @@ export default function Home() {
   const [renderStatus, setRenderStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [renderResult, setRenderResult] = useState<RenderPrototypeSuccessResponse | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [isClearingGenerated, setIsClearingGenerated] = useState(false);
+  const [clearGeneratedMessage, setClearGeneratedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -1198,6 +1211,49 @@ export default function Home() {
     setRenderResult(payload);
   }
 
+  async function handleClearGeneratedFiles() {
+    if (isClearingGenerated || isRenderBusy) {
+      return;
+    }
+
+    const shouldClear = window.confirm("Clear all files in public/generated? This removes generated images, audio, and renders.");
+    if (!shouldClear) {
+      return;
+    }
+
+    setIsClearingGenerated(true);
+    setClearGeneratedMessage(null);
+
+    let response: Response;
+    try {
+      response = await fetch("/api/generated/clear", { method: "POST" });
+    } catch {
+      setIsClearingGenerated(false);
+      setClearGeneratedMessage("Could not reach the clear-generated route.");
+      return;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | ClearGeneratedSuccessResponse
+      | ClearGeneratedErrorResponse
+      | null;
+
+    if (!response.ok || !payload || !payload.success) {
+      const errorPayload = payload as ClearGeneratedErrorResponse | null;
+      setIsClearingGenerated(false);
+      setClearGeneratedMessage(errorPayload?.message || "Could not clear generated files.");
+      return;
+    }
+
+    clearAllSceneImages();
+    clearNarrationAsset();
+    setRenderStatus("idle");
+    setRenderResult(null);
+    setRenderError(null);
+    setClearGeneratedMessage(payload.message);
+    setIsClearingGenerated(false);
+  }
+
   return (
     <div className={styles.page}>
       <main className={styles.container}>
@@ -1890,6 +1946,16 @@ export default function Home() {
               >
                 {isRenderBusy ? "Rendering..." : "Render Video"}
               </button>
+              <button
+                type="button"
+                className={styles.smallButton}
+                onClick={() => {
+                  void handleClearGeneratedFiles();
+                }}
+                disabled={isClearingGenerated || isRenderBusy}
+              >
+                {isClearingGenerated ? "Clearing..." : "Clear generated files"}
+              </button>
             </div>
             {renderStatus === "success" && renderResult ? (
               <div className={styles.summaryGrid}>
@@ -1901,6 +1967,7 @@ export default function Home() {
               </div>
             ) : null}
             {renderStatus === "error" && renderError ? <p className={styles.error}>{renderError}</p> : null}
+            {clearGeneratedMessage ? <p className={styles.info}>{clearGeneratedMessage}</p> : null}
           </div>
         </section>
 
