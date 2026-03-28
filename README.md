@@ -4,6 +4,7 @@
 ![React](https://img.shields.io/badge/React-19.2.4-149ECA?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript&logoColor=white)
 ![Remotion](https://img.shields.io/badge/Remotion-4.0.441-black?logo=remotion&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 scriptovid is a script-to-video solution that transforms written text into a complete video workflow in just a few clicks.
 
@@ -69,3 +70,7 @@ Then open:
 ```text
 http://localhost:3000
 ```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](./LICENSE).
