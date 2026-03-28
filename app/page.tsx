@@ -17,6 +17,11 @@ import {
 } from "@/modules/image-generation/prompt-builder";
 import { MOTION_PRESETS, MOTION_PRESET_IDS } from "@/lib/motion/motionPresets";
 import {
+  buildPreviewSnapshot,
+  createRenderSessionSeed,
+  persistPreviewSnapshot,
+} from "@/lib/preview/preview-snapshot";
+import {
   CINEMATIC_TRANSITION_OPTIONS,
   CINEMATIC_TRANSITION_PRESET_IDS,
   TRANSITION_DURATION_OPTIONS_MS,
@@ -336,6 +341,7 @@ export default function Home() {
   const [renderStatus, setRenderStatus] = useState<"idle" | "rendering" | "success" | "error">("idle");
   const [renderResult, setRenderResult] = useState<RenderPrototypeSuccessResponse | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [sceneDurationOverrideInputs, setSceneDurationOverrideInputs] = useState<Record<number, string>>({});
   const [lastRenderMotionAssignments, setLastRenderMotionAssignments] = useState<SceneMotionDebugRow[]>([]);
   const [lastRenderTransitionAssignments, setLastRenderTransitionAssignments] = useState<
@@ -1424,6 +1430,37 @@ export default function Home() {
     setRenderResult(payload);
   }
 
+  function openSnapshotInNewTab(routePath: "/studio-preview") {
+    let targetUrl: string = routePath;
+    try {
+      const renderSessionSeed = createRenderSessionSeed();
+      const renderProjectForSnapshot = buildRenderProjectFromCurrentState({
+        motionAssignmentSalt: renderSessionSeed,
+        renderSessionSeed,
+      });
+      const snapshot = buildPreviewSnapshot({
+        renderProject: renderProjectForSnapshot,
+        renderSessionSeed,
+      });
+      persistPreviewSnapshot(window.localStorage, snapshot);
+      const snapshotIdParam = encodeURIComponent(snapshot.snapshotId);
+      targetUrl = `${routePath}?snapshotId=${snapshotIdParam}`;
+      setPreviewError(null);
+    } catch {
+      setPreviewError("Could not prepare preview data.");
+      return;
+    }
+
+    const openedWindow = window.open(targetUrl, "_blank", "noopener,noreferrer");
+    if (!openedWindow) {
+      setPreviewError("Preview tab was blocked by your browser. Please allow pop-ups and try again.");
+    }
+  }
+
+  function handlePreviewVideo() {
+    openSnapshotInNewTab("/studio-preview");
+  }
+
   async function handleClearGeneratedFiles() {
     if (isClearingGenerated || isRenderBusy) {
       return;
@@ -2394,6 +2431,13 @@ export default function Home() {
             <div className={styles.actions}>
               <button
                 type="button"
+                className={styles.button}
+                onClick={handlePreviewVideo}
+              >
+                Preview Video
+              </button>
+              <button
+                type="button"
                 className={styles.buttonPrimary}
                 onClick={() => {
                   void handleRenderVideo();
@@ -2429,6 +2473,7 @@ export default function Home() {
               </div>
             ) : null}
             {renderStatus === "error" && renderError ? <p className={styles.error}>{renderError}</p> : null}
+            {previewError ? <p className={styles.error}>{previewError}</p> : null}
             {clearGeneratedMessage ? <p className={styles.info}>{clearGeneratedMessage}</p> : null}
             {lastRenderMotionAssignments.length > 0 ? (
               <div className={styles.motionDebugList}>

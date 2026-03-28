@@ -1,0 +1,153 @@
+.page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 20px;
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+.container {
+  width: min(1220px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #292524;
+}
+
+.topActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workspace {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.playerPanel {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.playerWrap {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #0f0f0f;
+  border: 1px solid #292524;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #d6d3d1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #292524;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.muted {
+  margin: 0;
+  font-size: 13px;
+  color: #57534e;
+}
+
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: #b91c1c;
+}
+
+.summaryGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.summaryItem {
+  font-size: 13px;
+  color: #292524;
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.sceneList {
+  display: grid;
+  gap: 8px;
+}
+
+.sceneItem {
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: #fafaf9;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.sceneRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.sceneLabel {
+  font-size: 12px;
+  color: #292524;
+  font-weight: 600;
+}
+
+.sceneMeta {
+  font-size: 12px;
+  color: #57534e;
+}
+
+@media (max-width: 960px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding: 12px;
+  }
+}
