@@ -2,7 +2,12 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { validateRenderProject } from "@/modules/video-renderer/render-project";
-import type { RenderNarration, RenderProject, RenderScene } from "@/types/render-project";
+import type {
+  RenderBackgroundMusic,
+  RenderNarration,
+  RenderProject,
+  RenderScene,
+} from "@/types/render-project";
 import { resolveSceneMotionPreset } from "@/remotion/lib/motionPresets";
 
 import type { RemotionRenderProps } from "@/remotion/VideoComposition";
@@ -112,6 +117,66 @@ async function resolveNarrationAudioUrl(narration: RenderNarration) {
   return localFileToDataUrl(normalizedFilePath, narration.mimeType);
 }
 
+async function resolveBackgroundMusicAudioUrl(backgroundMusic: RenderBackgroundMusic) {
+  const rawUrl = backgroundMusic.audioUrl;
+  if (!rawUrl || !rawUrl.trim()) {
+    return null;
+  }
+
+  const normalizedUrl = rawUrl.trim();
+  if (normalizedUrl.startsWith("data:audio/")) {
+    return normalizedUrl;
+  }
+  if (normalizedUrl.startsWith("http://") || normalizedUrl.startsWith("https://")) {
+    return normalizedUrl;
+  }
+  if (normalizedUrl.startsWith("/")) {
+    try {
+      const publicFilePath = path.join(PUBLIC_DIRECTORY, normalizedUrl.slice(1));
+      return await localFileToDataUrl(publicFilePath);
+    } catch (error) {
+      console.warn(
+        `[remotion-render] background music file could not be loaded and will be skipped: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+      return null;
+    }
+  }
+
+  console.warn("[remotion-render] background music URL is invalid and will be skipped.");
+  return null;
+}
+
+function normalizeBackgroundMusicForRemotion(
+  backgroundMusic?: RenderBackgroundMusic,
+): RemotionRenderProps["backgroundMusic"] {
+  const rawVolume = backgroundMusic?.volume;
+  const volume = Number.isFinite(rawVolume)
+    ? Math.min(100, Math.max(0, Math.round(rawVolume as number)))
+    : 25;
+
+  return {
+    enabled: Boolean(backgroundMusic?.enabled),
+    audioUrl:
+      typeof backgroundMusic?.audioUrl === "string" && backgroundMusic.audioUrl.trim()
+        ? backgroundMusic.audioUrl.trim()
+        : null,
+    fileName:
+      typeof backgroundMusic?.fileName === "string" && backgroundMusic.fileName.trim()
+        ? backgroundMusic.fileName.trim()
+        : null,
+    duration:
+      typeof backgroundMusic?.duration === "number" &&
+      Number.isFinite(backgroundMusic.duration) &&
+      backgroundMusic.duration > 0
+        ? backgroundMusic.duration
+        : null,
+    loop: Boolean(backgroundMusic?.loop),
+    volume,
+  };
+}
+
 export async function convertRenderProjectToRemotionProps(
   renderProject: RenderProject,
 ): Promise<RemotionRenderProps> {
@@ -133,6 +198,11 @@ export async function convertRenderProjectToRemotionProps(
         audioUrl: await resolveNarrationAudioUrl(renderProject.narration),
       }
     : undefined;
+  const normalizedBackgroundMusic = normalizeBackgroundMusicForRemotion(renderProject.backgroundMusic);
+  const backgroundMusicAudioUrl =
+    normalizedBackgroundMusic.enabled && normalizedBackgroundMusic.audioUrl
+      ? await resolveBackgroundMusicAudioUrl(normalizedBackgroundMusic)
+      : null;
 
   const totalSceneFrames = scenes.reduce((sum, scene) => sum + scene.durationFrames, 0);
   if (
@@ -159,6 +229,10 @@ export async function convertRenderProjectToRemotionProps(
     },
     scenes,
     narration,
+    backgroundMusic: {
+      ...normalizedBackgroundMusic,
+      audioUrl: backgroundMusicAudioUrl,
+    },
   };
 }
 

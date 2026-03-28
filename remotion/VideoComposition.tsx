@@ -1,4 +1,4 @@
-import { Audio, Sequence } from "remotion";
+import { Audio, Sequence, useVideoConfig } from "remotion";
 
 import type { TransitionType } from "@/types/render-project";
 
@@ -28,6 +28,14 @@ export type RemotionRenderProps = {
   narration?: {
     audioUrl: string;
   };
+  backgroundMusic: {
+    enabled: boolean;
+    audioUrl: string | null;
+    fileName: string | null;
+    duration: number | null;
+    loop: boolean;
+    volume: number;
+  };
 };
 
 export const DEFAULT_REMOTION_RENDER_PROPS: RemotionRenderProps = {
@@ -49,13 +57,56 @@ export const DEFAULT_REMOTION_RENDER_PROPS: RemotionRenderProps = {
     },
   ],
   narration: undefined,
+  backgroundMusic: {
+    enabled: false,
+    audioUrl: null,
+    fileName: null,
+    duration: null,
+    loop: false,
+    volume: 25,
+  },
 };
 
+function normalizeMusicVolume(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0.25;
+  }
+  const clampedPercent = Math.min(100, Math.max(0, Math.round(value)));
+  return clampedPercent / 100;
+}
+
+function BackgroundMusicLayer({
+  backgroundMusic,
+  durationInFrames,
+}: {
+  backgroundMusic: RemotionRenderProps["backgroundMusic"];
+  durationInFrames: number;
+}) {
+  if (!backgroundMusic.enabled || !backgroundMusic.audioUrl) {
+    return null;
+  }
+
+  return (
+    <Sequence from={0} durationInFrames={durationInFrames}>
+      <Audio
+        src={backgroundMusic.audioUrl}
+        volume={normalizeMusicVolume(backgroundMusic.volume)}
+        loop={backgroundMusic.loop}
+      />
+    </Sequence>
+  );
+}
+
 export function VideoComposition(props: RemotionRenderProps) {
+  const { durationInFrames } = useVideoConfig();
   const timeline = timelinePlanner(props);
 
   return (
     <>
+      <BackgroundMusicLayer
+        backgroundMusic={props.backgroundMusic}
+        durationInFrames={durationInFrames}
+      />
       {props.narration?.audioUrl ? <Audio src={props.narration.audioUrl} /> : null}
       {timeline.entries.map((entry) => {
         return (

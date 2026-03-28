@@ -68,6 +68,15 @@ export type RenderNarration = {
   modelId?: string;
 };
 
+export type RenderBackgroundMusic = {
+  enabled: boolean;
+  audioUrl: string | null;
+  fileName: string | null;
+  duration: number | null;
+  loop: boolean;
+  volume: number;
+};
+
 export type RenderSettings = {
   width: number;
   height: number;
@@ -88,6 +97,7 @@ export type RenderValidationIssue = {
 export type RenderProject = {
   scenes: RenderScene[];
   narration?: RenderNarration;
+  backgroundMusic?: RenderBackgroundMusic;
   settings: RenderSettings;
   timingStrategy: "estimated" | "scale-to-narration";
   scaleFactor?: number;

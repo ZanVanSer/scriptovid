@@ -1,9 +1,11 @@
 import { CINEMATIC_TRANSITION_PRESET_IDS } from "@/lib/render/transition-types";
 import { pickTransitionSequence } from "@/modules/video-renderer/transition-assignment";
+import type { MusicState } from "@/types/music";
 import type { NarrationState } from "@/types/narration";
 import {
   DEFAULT_RENDER_SETTINGS,
   type MotionSettings,
+  type RenderBackgroundMusic,
   type RenderImageAsset,
   type RenderMediaRef,
   type RenderNarration,
@@ -30,6 +32,7 @@ export type RenderProjectAppState = {
   sceneImages: Record<number, RenderProjectSceneImageInput | undefined>;
   sceneDurationOverrides?: Record<number, number | undefined>;
   narration: NarrationState;
+  music?: MusicState;
   settings?: Partial<RenderSettings>;
   timingStrategy?: "estimated" | "scale-to-narration" | "auto";
   motionSettings?: Partial<MotionSettings>;
@@ -174,6 +177,29 @@ function normalizeSceneImage(image?: RenderProjectSceneImageInput): RenderImageA
     mimeType: image?.mimeType,
     width: image?.width,
     height: image?.height,
+  };
+}
+
+function normalizeBackgroundMusic(music?: MusicState): RenderBackgroundMusic {
+  const rawVolume = music?.volume;
+  const volume = Number.isFinite(rawVolume)
+    ? Math.min(100, Math.max(0, Math.round(rawVolume as number)))
+    : 25;
+  const rawDuration = music?.duration;
+  const duration =
+    typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
+      ? rawDuration
+      : null;
+  const audioUrl = typeof music?.audioUrl === "string" && music.audioUrl.trim() ? music.audioUrl.trim() : null;
+  const fileName = typeof music?.fileName === "string" && music.fileName.trim() ? music.fileName.trim() : null;
+
+  return {
+    enabled: Boolean(music?.enabled),
+    audioUrl,
+    fileName,
+    duration,
+    loop: Boolean(music?.loop),
+    volume,
   };
 }
 
@@ -449,6 +475,7 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
   }));
 
   const narration = normalizeNarrationAsset(appState.narration);
+  const backgroundMusic = normalizeBackgroundMusic(appState.music);
   const motionSettings = resolveMotionSettings(appState);
   const transitionSettings = resolveTransitionSettings(appState);
   const settings: RenderSettings = {
@@ -540,6 +567,7 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
   const derivedProject: RenderProject = {
     scenes,
     narration,
+    backgroundMusic,
     settings,
     timingStrategy: resolvedTimingStrategy,
     scaleFactor,

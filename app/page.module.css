@@ -119,6 +119,18 @@
   gap: 10px;
 }
 
+.subSection {
+  border-top: 1px solid #e7e5e4;
+  padding-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.subSectionBody {
+  display: grid;
+  gap: 10px;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -156,6 +168,10 @@
   font-size: 14px;
   color: #292524;
   background: #ffffff;
+}
+
+.rangeInput {
+  width: 100%;
 }
 
 .storyboardStrip {

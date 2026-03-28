@@ -38,6 +38,7 @@ import {
   type NarrationMode,
   type NarrationState,
 } from "@/types/narration";
+import { createDefaultMusicState, type MusicState } from "@/types/music";
 import type { MotionPresetId, MotionSettings, TransitionType } from "@/types/render-project";
 import type { ScenePackResult } from "@/types/scene";
 import type { SentenceSplitResponse } from "@/types/sentence";
@@ -67,6 +68,7 @@ const ACCEPTED_AUDIO_TYPES = new Set([
 const ACCEPTED_AUDIO_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".ogg"];
 type ImageSourceMode = "manual" | "nanobanana";
 type SceneGenerationStatus = "idle" | "loading" | "done" | "error";
+const DEFAULT_MUSIC_VOLUME = 25;
 
 type SceneGenerationState = {
   status: SceneGenerationStatus;
@@ -317,6 +319,10 @@ export default function Home() {
   const narrationAudioUrlRef = useRef<string | undefined>(undefined);
   const narrationUploadRequestRef = useRef(0);
   const narrationGenerationRequestRef = useRef(0);
+  const [music, setMusic] = useState<MusicState>(createDefaultMusicState);
+  const [isMusicUploading, setIsMusicUploading] = useState(false);
+  const [musicError, setMusicError] = useState<string | null>(null);
+  const musicUploadRequestRef = useRef(0);
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsOption[]>([]);
   const [elevenLabsModels, setElevenLabsModels] = useState<ElevenLabsOption[]>([]);
   const [isLoadingElevenLabsOptions, setIsLoadingElevenLabsOptions] = useState(false);
@@ -385,6 +391,19 @@ export default function Home() {
 
   function clearSceneDurationOverrides() {
     setSceneDurationOverrideInputs({});
+  }
+
+  function clearMusicFile() {
+    musicUploadRequestRef.current += 1;
+    setMusic((current) => ({
+      ...current,
+      audioUrl: null,
+      filePath: null,
+      fileName: null,
+      duration: null,
+    }));
+    setIsMusicUploading(false);
+    setMusicError(null);
   }
 
   async function uploadImageToLocalStorage(file: File) {
@@ -493,8 +512,55 @@ export default function Home() {
     });
   }
 
+  async function applyMusicFile(file: File) {
+    if (!isAllowedAudioFile(file)) {
+      setMusicError("Please upload an MP3, WAV, M4A, AAC, or OGG audio file.");
+      return;
+    }
+
+    const requestId = musicUploadRequestRef.current + 1;
+    musicUploadRequestRef.current = requestId;
+    setIsMusicUploading(true);
+    setMusicError(null);
+
+    let uploaded: UploadAudioSuccessResponse;
+    try {
+      uploaded = await uploadAudioToLocalStorage(file);
+    } catch (uploadError) {
+      if (musicUploadRequestRef.current !== requestId) {
+        return;
+      }
+
+      const message = uploadError instanceof Error ? uploadError.message : "Audio file could not be saved.";
+      setMusicError(message);
+      setIsMusicUploading(false);
+      return;
+    }
+
+    const duration = await extractAudioDurationFromAudioSource(uploaded.audioUrl);
+
+    if (musicUploadRequestRef.current !== requestId) {
+      return;
+    }
+
+    setMusic((current) => ({
+      ...current,
+      audioUrl: uploaded.audioUrl,
+      filePath: uploaded.filePath,
+      fileName: uploaded.fileName,
+      duration: duration ?? null,
+    }));
+    setIsMusicUploading(false);
+    setMusicError(null);
+  }
+
   function openNarrationFilePicker() {
     const input = document.getElementById("narration-upload") as HTMLInputElement | null;
+    input?.click();
+  }
+
+  function openMusicFilePicker() {
+    const input = document.getElementById("music-upload") as HTMLInputElement | null;
     input?.click();
   }
 
@@ -1225,6 +1291,7 @@ export default function Home() {
 
   const activeNarrationAsset: NarrationAsset | undefined = narration.asset;
   const isNarrationReady = isNarrationReadyForRender(narration);
+  const clampedMusicVolume = Math.min(100, Math.max(0, Math.round(music.volume)));
   function buildRenderProjectFromCurrentState(options?: {
     motionAssignmentSalt?: string;
     renderSessionSeed?: string;
@@ -1234,6 +1301,7 @@ export default function Home() {
       sceneImages,
       sceneDurationOverrides,
       narration,
+      music,
       settings: {
         transitions: {
           enabled: transitionsEnabled,
@@ -1256,6 +1324,7 @@ export default function Home() {
     scenePackResult,
     sceneImages,
     narration,
+    music,
     sceneDurationOverrides,
     motionEnabled,
     allowedMotionPresetIds,
@@ -2095,6 +2164,98 @@ export default function Home() {
           {narration.error ? (
             <p className={styles.error}>Error: {narration.error}</p>
           ) : null}
+          <div className={styles.subSection}>
+            <label className={styles.checkboxField}>
+              <input
+                type="checkbox"
+                checked={music.enabled}
+                onChange={(event) => {
+                  setMusic((current) => ({
+                    ...current,
+                    enabled: event.target.checked,
+                  }));
+                }}
+              />
+              <span className={styles.fieldLabel}>Enable Background Music</span>
+            </label>
+            {music.enabled ? (
+              <div className={styles.subSectionBody}>
+                <input
+                  id="music-upload"
+                  type="file"
+                  accept=".mp3,.wav,.m4a,.aac,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg"
+                  className={styles.fileInput}
+                  onChange={(event) => {
+                    const file = event.target.files?.item(0);
+                    if (file) {
+                      void applyMusicFile(file);
+                    }
+                    event.target.value = "";
+                  }}
+                />
+                <div className={styles.actions}>
+                  <button type="button" className={styles.smallButton} onClick={openMusicFilePicker}>
+                    {music.audioUrl ? "Replace music" : "Upload music"}
+                  </button>
+                  {music.audioUrl ? (
+                    <button type="button" className={styles.smallButton} onClick={clearMusicFile}>
+                      Remove music
+                    </button>
+                  ) : null}
+                </div>
+                <div className={styles.summaryGrid}>
+                  <div className={styles.summaryItem}>File: {music.fileName || "—"}</div>
+                  <div className={styles.summaryItem}>
+                    Duration: {typeof music.duration === "number" ? formatDurationClock(music.duration) : "—"}
+                  </div>
+                  <div className={styles.summaryItem}>Loop: {music.loop ? "On" : "Off"}</div>
+                  <div className={styles.summaryItem}>Volume: {clampedMusicVolume}%</div>
+                </div>
+                <label className={styles.checkboxField}>
+                  <input
+                    type="checkbox"
+                    checked={music.loop}
+                    onChange={(event) => {
+                      setMusic((current) => ({
+                        ...current,
+                        loop: event.target.checked,
+                      }));
+                    }}
+                  />
+                  <span className={styles.fieldLabel}>Loop music if shorter than video</span>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Music Volume</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={clampedMusicVolume}
+                    className={styles.rangeInput}
+                    onChange={(event) => {
+                      const nextVolume = Number(event.target.value);
+                      setMusic((current) => ({
+                        ...current,
+                        volume: Number.isFinite(nextVolume)
+                          ? Math.min(100, Math.max(0, Math.round(nextVolume)))
+                          : DEFAULT_MUSIC_VOLUME,
+                      }));
+                    }}
+                  />
+                </label>
+                {music.audioUrl ? <audio className={styles.narrationPlayer} controls src={music.audioUrl} /> : null}
+                {!music.audioUrl && !isMusicUploading ? (
+                  <div className={styles.emptyState}>Upload a background music file to include with narration.</div>
+                ) : null}
+                {isMusicUploading ? <p className={styles.info}>Reading audio metadata...</p> : null}
+                {music.audioUrl && music.duration === null && !isMusicUploading ? (
+                  <p className={styles.info}>Duration metadata is unavailable for this file.</p>
+                ) : null}
+                {musicError ? <p className={styles.error}>Error: {musicError}</p> : null}
+              </div>
+            ) : null}
+          </div>
         </section>
 
         <section className={styles.panel}>
