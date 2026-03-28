@@ -13,6 +13,20 @@ export type MotionPresetId =
   | "drift-left-zoom-in"
   | "drift-right-zoom-in";
 
+export type TransitionType =
+  | "cut"
+  | "crossfade"
+  | "slide-left"
+  | "slide-right"
+  | "zoom-transition";
+
+export type TransitionSettings = {
+  enabled: boolean;
+  presetPool: TransitionType[];
+  durationMs: number;
+  renderSessionSeed?: string;
+};
+
 export type MotionSettings = {
   enabled: boolean;
   allowedPresetIds: MotionPresetId[];
@@ -36,6 +50,8 @@ export type RenderScene = {
   text: string;
   estimatedDuration: number;
   finalDuration: number;
+  transitionType?: TransitionType;
+  transitionDurationMs?: number;
   motionPreset?: MotionPresetId;
   image: RenderImageAsset;
 };
@@ -58,6 +74,7 @@ export type RenderSettings = {
   container: "mp4";
   videoCodec: "h264";
   audioCodec: "aac";
+  transitions: TransitionSettings;
   motion: MotionSettings;
 };
 
@@ -87,6 +104,11 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
   container: "mp4",
   videoCodec: "h264",
   audioCodec: "aac",
+  transitions: {
+    enabled: true,
+    presetPool: ["crossfade", "slide-left", "slide-right", "zoom-transition"],
+    durationMs: 500,
+  },
   motion: {
     enabled: true,
     allowedPresetIds: [

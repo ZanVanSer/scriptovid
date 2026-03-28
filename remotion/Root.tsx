@@ -5,12 +5,17 @@ import {
   type RemotionRenderProps,
   VideoComposition,
 } from "./VideoComposition";
+import { timelinePlanner } from "./lib/timeline-planner";
 
 const REMOTION_RENDER_PROJECT_COMPOSITION_ID = "remotion-render-project";
 
 function getTotalDurationInFrames(scenes: RemotionRenderProps["scenes"]) {
-  const total = scenes.reduce((sum, scene) => sum + scene.durationFrames, 0);
-  return Math.max(1, total);
+  const timeline = timelinePlanner({
+    fps: DEFAULT_REMOTION_RENDER_PROPS.fps,
+    transitions: DEFAULT_REMOTION_RENDER_PROPS.transitions,
+    scenes,
+  });
+  return timeline.totalCompositionFrames;
 }
 
 export function RemotionRoot() {
@@ -25,8 +30,13 @@ export function RemotionRoot() {
       defaultProps={DEFAULT_REMOTION_RENDER_PROPS}
       calculateMetadata={({ props }) => {
         const typedProps = props as RemotionRenderProps;
+        const timeline = timelinePlanner({
+          fps: typedProps.fps,
+          transitions: typedProps.transitions,
+          scenes: typedProps.scenes,
+        });
         return {
-          durationInFrames: getTotalDurationInFrames(typedProps.scenes),
+          durationInFrames: timeline.totalCompositionFrames,
           fps: typedProps.fps,
           width: typedProps.width,
           height: typedProps.height,

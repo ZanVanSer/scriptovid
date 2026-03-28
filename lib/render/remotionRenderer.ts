@@ -123,6 +123,8 @@ export async function convertRenderProjectToRemotionProps(
       id: scene.id || String(scene.order),
       imageUrl: await resolveSceneImageUrl(scene),
       durationFrames: secondsToFrames(scene.finalDuration, fps),
+      transitionType: scene.transitionType,
+      transitionDurationMs: scene.transitionDurationMs,
       motionPreset: resolveSceneMotionPreset(scene, sceneIndex, renderProject.settings.motion),
     })),
   );
@@ -151,6 +153,10 @@ export async function convertRenderProjectToRemotionProps(
     height,
     fps,
     motionStrength: renderProject.settings.motion.strength,
+    transitions: {
+      enabled: renderProject.settings.transitions.enabled,
+      durationMs: renderProject.settings.transitions.durationMs,
+    },
     scenes,
     narration,
   };

@@ -16,6 +16,11 @@ import {
   type VisualStylePresetId,
 } from "@/modules/image-generation/prompt-builder";
 import { MOTION_PRESETS, MOTION_PRESET_IDS } from "@/lib/motion/motionPresets";
+import {
+  CINEMATIC_TRANSITION_OPTIONS,
+  CINEMATIC_TRANSITION_PRESET_IDS,
+  TRANSITION_DURATION_OPTIONS_MS,
+} from "@/lib/render/transition-types";
 import { buildRenderProject } from "@/modules/video-renderer/render-project";
 import { DEFAULT_WORDS_PER_MINUTE } from "@/modules/scene-splitter/constants";
 import { toPackableTimedUnits } from "@/modules/scene-splitter/fallback-splitter";
@@ -33,7 +38,7 @@ import {
   type NarrationMode,
   type NarrationState,
 } from "@/types/narration";
-import type { MotionPresetId, MotionSettings } from "@/types/render-project";
+import type { MotionPresetId, MotionSettings, TransitionType } from "@/types/render-project";
 import type { ScenePackResult } from "@/types/scene";
 import type { SentenceSplitResponse } from "@/types/sentence";
 
@@ -158,6 +163,12 @@ type RenderPrototypeErrorResponse = {
 type SceneMotionDebugRow = {
   order: number;
   motionPreset: string;
+};
+
+type SceneTransitionDebugRow = {
+  order: number;
+  transitionType: string;
+  transitionDurationMs: number;
 };
 
 type ClearGeneratedSuccessResponse = {
@@ -310,11 +321,19 @@ export default function Home() {
   const [renderResult, setRenderResult] = useState<RenderPrototypeSuccessResponse | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [lastRenderMotionAssignments, setLastRenderMotionAssignments] = useState<SceneMotionDebugRow[]>([]);
+  const [lastRenderTransitionAssignments, setLastRenderTransitionAssignments] = useState<
+    SceneTransitionDebugRow[]
+  >([]);
   const [isClearingGenerated, setIsClearingGenerated] = useState(false);
   const [clearGeneratedMessage, setClearGeneratedMessage] = useState<string | null>(null);
   const [motionEnabled, setMotionEnabled] = useState(true);
   const [allowedMotionPresetIds, setAllowedMotionPresetIds] = useState<MotionPresetId[]>(MOTION_PRESET_IDS);
   const [motionStrength, setMotionStrength] = useState<MotionSettings["strength"]>("medium");
+  const [transitionsEnabled, setTransitionsEnabled] = useState(true);
+  const [allowedTransitionPresetIds, setAllowedTransitionPresetIds] = useState<TransitionType[]>(
+    CINEMATIC_TRANSITION_PRESET_IDS,
+  );
+  const [transitionDurationMs, setTransitionDurationMs] = useState<number>(500);
 
   useEffect(() => {
     sceneImagesRef.current = sceneImages;
@@ -1166,18 +1185,29 @@ export default function Home() {
 
   const activeNarrationAsset: NarrationAsset | undefined = narration.asset;
   const isNarrationReady = isNarrationReadyForRender(narration);
-  function buildRenderProjectFromCurrentState(motionAssignmentSalt?: string) {
+  function buildRenderProjectFromCurrentState(options?: {
+    motionAssignmentSalt?: string;
+    renderSessionSeed?: string;
+  }) {
     return buildRenderProject({
       scenePackResult,
       sceneImages,
       narration,
+      settings: {
+        transitions: {
+          enabled: transitionsEnabled,
+          presetPool: allowedTransitionPresetIds,
+          durationMs: transitionDurationMs,
+          renderSessionSeed: options?.renderSessionSeed,
+        },
+      },
       motionSettings: {
         enabled: motionEnabled,
         allowedPresetIds: allowedMotionPresetIds,
         assignmentMode: "deterministic-by-scene-index",
         strength: motionStrength,
       },
-      motionAssignmentSalt,
+      motionAssignmentSalt: options?.motionAssignmentSalt,
     });
   }
 
@@ -1188,6 +1218,9 @@ export default function Home() {
     motionEnabled,
     allowedMotionPresetIds,
     motionStrength,
+    transitionsEnabled,
+    allowedTransitionPresetIds,
+    transitionDurationMs,
   ]);
   const assignedMotionCount = renderProject.scenes.filter((scene) => scene.motionPreset).length;
   const durationDeltaSeconds =
@@ -1202,9 +1235,11 @@ export default function Home() {
       return;
     }
 
-    const renderProjectForRequest = buildRenderProjectFromCurrentState(
-      `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-    );
+    const renderSessionSeed = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const renderProjectForRequest = buildRenderProjectFromCurrentState({
+      motionAssignmentSalt: renderSessionSeed,
+      renderSessionSeed,
+    });
 
     if (!renderProjectForRequest.isReady) {
       setRenderStatus("error");
@@ -1216,6 +1251,15 @@ export default function Home() {
           motionPreset: scene.motionPreset || "static",
         })),
       );
+      setLastRenderTransitionAssignments(
+        renderProjectForRequest.scenes
+          .slice(0, -1)
+          .map((scene) => ({
+            order: scene.order,
+            transitionType: scene.transitionType || "cut",
+            transitionDurationMs: scene.transitionDurationMs || 0,
+          })),
+      );
       return;
     }
 
@@ -1224,6 +1268,15 @@ export default function Home() {
         order: scene.order,
         motionPreset: scene.motionPreset || "static",
       })),
+    );
+    setLastRenderTransitionAssignments(
+      renderProjectForRequest.scenes
+        .slice(0, -1)
+        .map((scene) => ({
+          order: scene.order,
+          transitionType: scene.transitionType || "cut",
+          transitionDurationMs: scene.transitionDurationMs || 0,
+        })),
     );
     setRenderStatus("loading");
     setRenderError(null);
@@ -1305,6 +1358,15 @@ export default function Home() {
 
   function toggleAllowedMotionPreset(presetId: MotionPresetId) {
     setAllowedMotionPresetIds((current) => {
+      if (current.includes(presetId)) {
+        return current.filter((candidate) => candidate !== presetId);
+      }
+      return [...current, presetId];
+    });
+  }
+
+  function toggleAllowedTransitionPreset(presetId: TransitionType) {
+    setAllowedTransitionPresetIds((current) => {
       if (current.includes(presetId)) {
         return current.filter((candidate) => candidate !== presetId);
       }
@@ -1963,6 +2025,48 @@ export default function Home() {
             <label className={styles.checkboxField}>
               <input
                 type="checkbox"
+                checked={transitionsEnabled}
+                onChange={(event) => setTransitionsEnabled(event.target.checked)}
+              />
+              <span className={styles.fieldLabel}>Enable Transitions</span>
+            </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Transition Duration</span>
+              <select
+                className={styles.selectInput}
+                value={transitionDurationMs}
+                disabled={!transitionsEnabled}
+                onChange={(event) => setTransitionDurationMs(Number(event.target.value))}
+              >
+                {TRANSITION_DURATION_OPTIONS_MS.map((durationMs) => (
+                  <option key={durationMs} value={durationMs}>
+                    {durationMs} ms
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className={styles.motionPresetGrid}>
+              {CINEMATIC_TRANSITION_OPTIONS.map((preset) => (
+                <label key={preset.value} className={styles.checkboxField}>
+                  <input
+                    type="checkbox"
+                    checked={allowedTransitionPresetIds.includes(preset.value)}
+                    disabled={!transitionsEnabled}
+                    onChange={() => toggleAllowedTransitionPreset(preset.value)}
+                  />
+                  <span className={styles.fieldLabel}>{preset.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className={styles.info}>
+              Allowed transitions:{" "}
+              {transitionsEnabled
+                ? `${allowedTransitionPresetIds.length || 1} preset${allowedTransitionPresetIds.length === 1 ? "" : "s"}`
+                : "disabled (cuts only)"}
+            </p>
+            <label className={styles.checkboxField}>
+              <input
+                type="checkbox"
                 checked={motionEnabled}
                 onChange={(event) => setMotionEnabled(event.target.checked)}
               />
@@ -2022,6 +2126,9 @@ export default function Home() {
               </div>
               <div className={styles.summaryItem}>Timing Strategy: {renderProject.timingStrategy}</div>
               <div className={styles.summaryItem}>
+                Transitions: {transitionsEnabled ? "enabled" : "disabled"} · {transitionDurationMs} ms
+              </div>
+              <div className={styles.summaryItem}>
                 Scale Factor: {typeof renderProject.scaleFactor === "number" ? renderProject.scaleFactor.toFixed(3) : "—"}
               </div>
               <div className={styles.summaryItem}>Render Ready: {renderProject.isReady ? "Yes" : "No"}</div>
@@ -2080,6 +2187,15 @@ export default function Home() {
                 {lastRenderMotionAssignments.map((row) => (
                   <div key={`motion-${row.order}`} className={styles.listMeta}>
                     Scene {row.order}: {row.motionPreset}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {lastRenderTransitionAssignments.length > 0 ? (
+              <div className={styles.motionDebugList}>
+                {lastRenderTransitionAssignments.map((row) => (
+                  <div key={`transition-${row.order}`} className={styles.listMeta}>
+                    Scene {row.order} → {row.order + 1}: {row.transitionType} ({row.transitionDurationMs} ms)
                   </div>
                 ))}
               </div>

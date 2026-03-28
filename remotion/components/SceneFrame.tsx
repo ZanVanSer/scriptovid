@@ -8,6 +8,7 @@ type SceneFrameProps = {
   width: number;
   height: number;
   durationInFrames: number;
+  frameOffsetFrames?: number;
   motionPreset?: RemotionMotionPresetName;
   motionStrength: "weak" | "medium" | "strong";
 };
@@ -17,11 +18,13 @@ export function SceneFrame({
   width,
   height,
   durationInFrames,
+  frameOffsetFrames = 0,
   motionPreset,
   motionStrength,
 }: SceneFrameProps) {
   const frame = useCurrentFrame();
-  const motion = getSceneMotion(motionPreset, frame, durationInFrames, width, height, motionStrength);
+  const motionFrame = Math.min(durationInFrames - 1, Math.max(0, frame - frameOffsetFrames));
+  const motion = getSceneMotion(motionPreset, motionFrame, durationInFrames, width, height, motionStrength);
 
   return (
     <AbsoluteFill

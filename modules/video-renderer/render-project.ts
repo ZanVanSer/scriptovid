@@ -1,3 +1,5 @@
+import { CINEMATIC_TRANSITION_PRESET_IDS } from "@/lib/render/transition-types";
+import { pickTransitionSequence } from "@/modules/video-renderer/transition-assignment";
 import type { NarrationState } from "@/types/narration";
 import {
   DEFAULT_RENDER_SETTINGS,
@@ -7,6 +9,8 @@ import {
   type RenderNarration,
   type RenderProject,
   type RenderSettings,
+  type TransitionSettings,
+  type TransitionType,
   type RenderValidationIssue,
 } from "@/types/render-project";
 import type { ScenePackResult } from "@/types/scene";
@@ -33,6 +37,74 @@ export type RenderProjectAppState = {
 
 function isPositiveDuration(value: number) {
   return Number.isFinite(value) && value > 0;
+}
+
+function isValidTransitionType(value: unknown): value is TransitionType {
+  return (
+    value === "cut" ||
+    value === "crossfade" ||
+    value === "slide-left" ||
+    value === "slide-right" ||
+    value === "zoom-transition"
+  );
+}
+
+function normalizeTransitionDurationMs(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_RENDER_SETTINGS.transitions.durationMs;
+  }
+
+  if ((value as number) < 0) {
+    return 0;
+  }
+
+  return Math.round(value as number);
+}
+
+function normalizeTransitionPool(value: TransitionType[] | undefined) {
+  const presetPool = Array.isArray(value) ? value.filter((preset) => isValidTransitionType(preset)) : [];
+  const uniquePool = [...new Set(presetPool)];
+  return uniquePool.filter((preset) => preset !== "cut");
+}
+
+function resolveTransitionSettings(appState: RenderProjectAppState): TransitionSettings {
+  const rawSettings = appState.settings as
+    | (Partial<RenderSettings> & {
+        defaultTransitionType?: TransitionType;
+        defaultTransitionDuration?: number;
+      })
+    | undefined;
+
+  const legacyType = rawSettings?.defaultTransitionType;
+  const legacyDuration = rawSettings?.defaultTransitionDuration;
+
+  const merged = {
+    ...DEFAULT_RENDER_SETTINGS.transitions,
+    ...(rawSettings?.transitions || {}),
+  };
+
+  const hasLegacyType = isValidTransitionType(legacyType);
+  const resolvedPool = normalizeTransitionPool(
+    merged.presetPool && merged.presetPool.length > 0
+      ? merged.presetPool
+      : hasLegacyType && legacyType !== "cut"
+        ? [legacyType]
+        : CINEMATIC_TRANSITION_PRESET_IDS,
+  );
+
+  const durationMs = normalizeTransitionDurationMs(
+    typeof merged.durationMs === "number" ? merged.durationMs : legacyDuration,
+  );
+
+  return {
+    enabled: Boolean(merged.enabled),
+    presetPool: resolvedPool,
+    durationMs,
+    renderSessionSeed:
+      typeof merged.renderSessionSeed === "string" && merged.renderSessionSeed.trim()
+        ? merged.renderSessionSeed.trim()
+        : undefined,
+  };
 }
 
 function normalizeMediaRef(value?: string, kind: RenderMediaRef["kind"] = "url") {
@@ -249,7 +321,50 @@ export function validateRenderProject(
         );
       }
     }
+
+    if (scene.transitionType !== undefined && !isValidTransitionType(scene.transitionType)) {
+      issues.push(
+        createIssue(
+          "INVALID_TRANSITION_TYPE",
+          `Scene ${scene.order} has an invalid transition type.`,
+          "error",
+        ),
+      );
+    }
+
+    if (
+      scene.transitionDurationMs !== undefined &&
+      (!Number.isFinite(scene.transitionDurationMs) || scene.transitionDurationMs < 0)
+    ) {
+      issues.push(
+        createIssue(
+          "INVALID_TRANSITION_DURATION",
+          `Scene ${scene.order} has an invalid transition duration.`,
+          "error",
+        ),
+      );
+    }
   });
+
+  if (!renderProject.settings.transitions || typeof renderProject.settings.transitions !== "object") {
+    issues.push(createIssue("INVALID_TRANSITION_SETTINGS", "Transition settings are missing.", "error"));
+  } else {
+    if (
+      !Number.isFinite(renderProject.settings.transitions.durationMs) ||
+      renderProject.settings.transitions.durationMs < 0
+    ) {
+      issues.push(
+        createIssue("INVALID_TRANSITION_DURATION", "Default transition duration is invalid.", "error"),
+      );
+    }
+
+    const hasInvalidPreset = (renderProject.settings.transitions.presetPool || []).some(
+      (preset) => !isValidTransitionType(preset),
+    );
+    if (hasInvalidPreset) {
+      issues.push(createIssue("INVALID_TRANSITION_TYPE", "Transition preset pool is invalid.", "error"));
+    }
+  }
 
   if (!renderProject.narration) {
     issues.push(createIssue("MISSING_NARRATION", "Narration track is missing.", "error"));
@@ -333,9 +448,11 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
 
   const narration = normalizeNarrationAsset(appState.narration);
   const motionSettings = resolveMotionSettings(appState);
+  const transitionSettings = resolveTransitionSettings(appState);
   const settings: RenderSettings = {
     ...DEFAULT_RENDER_SETTINGS,
     ...appState.settings,
+    transitions: transitionSettings,
     motion: motionSettings,
   };
 
@@ -381,17 +498,37 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
         }))
       : estimatedScenes;
 
-  const scenes = timingAdjustedScenes.map((scene, sceneIndex) => ({
-    ...scene,
-    motionPreset:
-      motionSettings.enabled && motionSettings.allowedPresetIds.length > 0
-        ? assignMotionPresetBySceneIndex(
-            sceneIndex,
-            motionSettings.allowedPresetIds,
-            appState.motionAssignmentSalt,
-          )
-        : undefined,
-  }));
+  const transitionSequence = transitionSettings.enabled
+    ? pickTransitionSequence({
+        boundaryCount: Math.max(0, timingAdjustedScenes.length - 1),
+        presetPool: transitionSettings.presetPool,
+        renderSessionSeed: transitionSettings.renderSessionSeed || "transition-seed-default",
+      })
+    : [];
+
+  const scenes = timingAdjustedScenes.map((scene, sceneIndex) => {
+    const isLastScene = sceneIndex === timingAdjustedScenes.length - 1;
+    const boundaryTransitionType = !isLastScene
+      ? transitionSequence[sceneIndex] || "crossfade"
+      : "cut";
+
+    return {
+      ...scene,
+      transitionType: transitionSettings.enabled ? boundaryTransitionType : "cut",
+      transitionDurationMs:
+        transitionSettings.enabled && !isLastScene && boundaryTransitionType !== "cut"
+          ? transitionSettings.durationMs
+          : 0,
+      motionPreset:
+        motionSettings.enabled && motionSettings.allowedPresetIds.length > 0
+          ? assignMotionPresetBySceneIndex(
+              sceneIndex,
+              motionSettings.allowedPresetIds,
+              appState.motionAssignmentSalt,
+            )
+          : undefined,
+    };
+  });
 
   const totalFinalSceneDuration = scenes.reduce((sum, scene) => sum + scene.finalDuration, 0);
 
