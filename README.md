@@ -6,20 +6,20 @@
 ![Remotion](https://img.shields.io/badge/Remotion-4.0.441-black?logo=remotion&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-scriptovid is a script-to-video solution that transforms written text into a complete video workflow in just a few clicks.
+`scriptovid` is a local-first script-to-video tool built around a simple step-by-step wizard.
+
+## Workflow
+
+Script Input -> Scene Review -> Image Generation -> Voice Generation -> Video Rendering -> Download
 
 ## Features
 
-- Script-to-scene splitting engine
-- Scene timing and duration controls
-- Prompt-driven scene image generation
-- Per-scene image upload and regeneration
-- Narration generation and voice settings
-- Local media asset management
-- Motion preset and transition controls
-- Render pipeline with export-ready MP4 output
-- Studio preview and timeline validation
-- Guided multi-step production wizard
+- Wizard-based script-to-video flow
+- Sentence-aware scene splitting with duration control
+- Image generation with per-scene regenerate and manual image mode
+- Narration generation with preview and manual narration mode
+- Motion presets and transitions for scene playback
+- Local media handling and export-ready rendering
 
 ## Tech Stack
 
@@ -27,50 +27,40 @@ scriptovid is a script-to-video solution that transforms written text into a com
 - React
 - TypeScript
 - Remotion
-- `@remotion/bundler`
-- `@remotion/renderer`
 - BlingFire
 - ESLint
+
+## Requirements
+
+- Node.js 20+
 
 ## Run Locally
 
 ```bash
-git clone <your-repo-url>
+git clone <repo-url>
 cd scriptovid
-```
-
-```bash
-# Node.js 20+ recommended
-nvm install 20
-nvm use 20
-```
-
-```bash
 npm install
 ```
 
 Create `.env.local` in the project root:
 
 ```env
-# Required for Nanobanana image generation (server-side)
+# Optional when using manual/mock-style image flow
 GEMINI_API_KEY=your_gemini_api_key
 
-# Required for ElevenLabs narration
+# Optional when using manual/mock-style narration flow
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ```
 
-Run the app:
+Start development server:
 
 ```bash
 npm run dev
 ```
 
-Then open:
-
-```text
-http://localhost:3000
-```
+Open [http://localhost:3000](http://localhost:3000).
 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](./LICENSE).
+Third-party dependencies (including Remotion) are licensed under their own terms.
