@@ -26,31 +26,46 @@ function formatClock(seconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+function readInitialPageState(): PageState {
+  const snapshotIdParam = new URLSearchParams(window.location.search).get("snapshotId");
+  const result = readPreviewSnapshot(window.localStorage, snapshotIdParam || undefined);
+  if (!result.ok) {
+    if (result.errorCode === "NOT_FOUND") {
+      return {
+        status: "error",
+        message: "No studio preview data found. Please return to the main editor and try again.",
+      };
+    }
+
+    return {
+      status: "error",
+      message: "Studio preview data is invalid. Please return to the main editor and create a new snapshot.",
+    };
+  }
+
+  return {
+    status: "loaded",
+    snapshot: result.snapshot,
+  };
+}
+
 export default function StudioPreviewPage() {
   const [pageState, setPageState] = useState<PageState>({ status: "loading" });
 
   useEffect(() => {
-    const snapshotIdParam = new URLSearchParams(window.location.search).get("snapshotId");
-    const result = readPreviewSnapshot(window.localStorage, snapshotIdParam || undefined);
-    if (!result.ok) {
-      if (result.errorCode === "NOT_FOUND") {
-        setPageState({
-          status: "error",
-          message: "No studio preview data found. Please return to the main editor and try again.",
-        });
+    let isCancelled = false;
+
+    queueMicrotask(() => {
+      if (isCancelled) {
         return;
       }
-      setPageState({
-        status: "error",
-        message: "Studio preview data is invalid. Please return to the main editor and create a new snapshot.",
-      });
-      return;
-    }
 
-    setPageState({
-      status: "loaded",
-      snapshot: result.snapshot,
+      setPageState(readInitialPageState());
     });
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   const previewData = useMemo(() => {

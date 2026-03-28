@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Script to Video - Phase 2.4.5",
+  title: "scriptovid",
   description: "Per-scene and batch Nanobanana generation controls with retry/regenerate flows.",
 };
 

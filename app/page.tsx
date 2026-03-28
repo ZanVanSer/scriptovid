@@ -5,8 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_NANOBANANA_MODEL,
   NANOBANANA_MODELS,
-  NanobananaError,
-  generateNanobananaImage,
   type NanobananaModel,
 } from "@/modules/image-generation/nanobanana";
 import {
@@ -162,6 +160,18 @@ type RenderPrototypeSuccessResponse = {
 };
 
 type RenderPrototypeErrorResponse = {
+  success: false;
+  errorCode: string;
+  message: string;
+};
+
+type NanobananaGenerateSuccessResponse = {
+  success: true;
+  imageUrl: string;
+  mimeType: string;
+};
+
+type NanobananaGenerateErrorResponse = {
   success: false;
   errorCode: string;
   message: string;
@@ -889,36 +899,43 @@ export default function Home() {
     }));
   }
 
-  function resolveNanobananaApiKey() {
-    const overrideKey = nanobananaApiKeyOverride.trim();
-    if (overrideKey) {
-      return overrideKey;
+  function resolveNanobananaApiKeyOverride() {
+    return nanobananaApiKeyOverride.trim();
+  }
+
+  async function generateNanobananaImageViaApi(
+    prompt: string,
+    model: NanobananaModel,
+    apiKeyOverride?: string,
+  ) {
+    const response = await fetch("/api/image/nanobanana", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt,
+        model,
+        aspectRatio: "16:9",
+        apiKeyOverride: apiKeyOverride?.trim() || undefined,
+      }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | NanobananaGenerateSuccessResponse
+      | NanobananaGenerateErrorResponse
+      | null;
+
+    if (!response.ok || !payload || !payload.success) {
+      const message = payload && !payload.success ? payload.message : "Image generation failed.";
+      throw new Error(message);
     }
 
-    return process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+    return payload;
   }
 
   async function generateSceneImage(sceneIndex: number, prompt: string, forcedApiKey?: string) {
-    const apiKey = forcedApiKey || resolveNanobananaApiKey();
-    if (!apiKey) {
-      const message =
-        "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or provide a local override key.";
-      setSceneGenerationStates((current) => ({
-        ...current,
-        [sceneIndex]: {
-          status: "error",
-          errorMessage: message,
-          usedPrompt: prompt,
-          usedModel: nanobananaModel,
-          imageUrl: undefined,
-        },
-      }));
-      setSceneImageErrors((current) => ({
-        ...current,
-        [sceneIndex]: message,
-      }));
-      return;
-    }
+    const apiKeyOverride = forcedApiKey || resolveNanobananaApiKeyOverride();
 
     setSceneGenerationStates((current) => ({
       ...current,
@@ -933,12 +950,11 @@ export default function Home() {
     clearSceneImageErrorsFor(sceneIndex);
 
     try {
-      const result = await generateNanobananaImage({
+      const result = await generateNanobananaImageViaApi(
         prompt,
-        model: nanobananaModel,
-        apiKey,
-        aspectRatio: "16:9",
-      });
+        nanobananaModel,
+        apiKeyOverride,
+      );
 
       const blob = await fetch(result.imageUrl).then(async (response) => response.blob());
       const generatedFile = new File([blob], `scene-${sceneIndex}.png`, {
@@ -978,9 +994,7 @@ export default function Home() {
       }));
     } catch (generationError) {
       let message = "Image generation failed.";
-      if (generationError instanceof NanobananaError) {
-        message = generationError.message;
-      } else if (generationError instanceof Error) {
+      if (generationError instanceof Error) {
         message = generationError.message;
       }
 
@@ -1027,32 +1041,7 @@ export default function Home() {
       return;
     }
 
-    const apiKey = resolveNanobananaApiKey();
-    if (!apiKey) {
-      const message =
-        "Gemini API key is missing. Set NEXT_PUBLIC_GEMINI_API_KEY or provide a local override key.";
-      setSceneGenerationStates((current) => {
-        const next = { ...current };
-        targetScenes.forEach((scene) => {
-          next[scene.index] = {
-            status: "error",
-            errorMessage: message,
-            usedPrompt: scenePrompts[scene.index] || scene.text,
-            usedModel: nanobananaModel,
-            imageUrl: undefined,
-          };
-        });
-        return next;
-      });
-      setSceneImageErrors((current) => {
-        const next = { ...current };
-        targetScenes.forEach((scene) => {
-          next[scene.index] = message;
-        });
-        return next;
-      });
-      return;
-    }
+    const apiKeyOverride = resolveNanobananaApiKeyOverride();
 
     setIsBatchGenerating(true);
     setBatchProgress({ completed: 0, total: targetScenes.length, mode });
@@ -1060,7 +1049,7 @@ export default function Home() {
     for (let index = 0; index < targetScenes.length; index += 1) {
       const scene = targetScenes[index];
       const prompt = scenePrompts[scene.index] || scene.text;
-      await generateSceneImage(scene.index, prompt, apiKey);
+      await generateSceneImage(scene.index, prompt, apiKeyOverride);
       setBatchProgress({
         completed: index + 1,
         total: targetScenes.length,
@@ -1640,7 +1629,7 @@ export default function Home() {
                     className={styles.numberInput}
                     value={nanobananaApiKeyOverride}
                     onChange={(event) => setNanobananaApiKeyOverride(event.target.value)}
-                    placeholder="Use NEXT_PUBLIC_GEMINI_API_KEY if empty"
+                    placeholder="Uses server GEMINI_API_KEY if empty"
                   />
                 </label>
               </>
