@@ -50,6 +50,7 @@ export type RenderScene = {
   text: string;
   estimatedDuration: number;
   finalDuration: number;
+  durationOverrideSeconds?: number;
   transitionType?: TransitionType;
   transitionDurationMs?: number;
   motionPreset?: MotionPresetId;

@@ -20,6 +20,7 @@ export type PackedScene = {
   index: number;
   text: string;
   estimatedDurationSeconds: number;
+  durationOverrideSeconds?: number;
   totalWordCount: number;
   sourceUnitCount: number;
   sentenceCount: number;

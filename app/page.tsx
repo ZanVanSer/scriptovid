@@ -186,6 +186,16 @@ function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
 }
 
+function normalizeSceneDurationOverrideSeconds(value: number) {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  const stepped = Math.round(value * 2) / 2;
+  const bounded = Math.min(30, Math.max(1, stepped));
+  return bounded;
+}
+
 function formatDurationClock(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) {
     return "—";
@@ -317,9 +327,10 @@ export default function Home() {
     total: number;
     mode: BatchGenerationMode;
   } | null>(null);
-  const [renderStatus, setRenderStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [renderStatus, setRenderStatus] = useState<"idle" | "rendering" | "success" | "error">("idle");
   const [renderResult, setRenderResult] = useState<RenderPrototypeSuccessResponse | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [sceneDurationOverrideInputs, setSceneDurationOverrideInputs] = useState<Record<number, string>>({});
   const [lastRenderMotionAssignments, setLastRenderMotionAssignments] = useState<SceneMotionDebugRow[]>([]);
   const [lastRenderTransitionAssignments, setLastRenderTransitionAssignments] = useState<
     SceneTransitionDebugRow[]
@@ -370,6 +381,10 @@ export default function Home() {
         error: undefined,
       };
     });
+  }
+
+  function clearSceneDurationOverrides() {
+    setSceneDurationOverrideInputs({});
   }
 
   async function uploadImageToLocalStorage(file: File) {
@@ -1019,6 +1034,7 @@ export default function Home() {
       const warnings = detectSplitWarnings(data.normalizedText);
 
       clearAllSceneImages();
+      clearSceneDurationOverrides();
       setResult(data);
       setScenePackResult(null);
       setScenePackError(null);
@@ -1033,6 +1049,7 @@ export default function Home() {
 
   function handleLoadSample() {
     clearAllSceneImages();
+    clearSceneDurationOverrides();
     setScriptText(SAMPLE_SCRIPT);
     setResult(null);
     setScenePackResult(null);
@@ -1073,6 +1090,7 @@ export default function Home() {
     });
 
     clearAllSceneImages();
+    clearSceneDurationOverrides();
     setScenePackResult(packed);
   }
 
@@ -1142,6 +1160,28 @@ export default function Home() {
     );
   }, [scenePackResult, sceneGenerationStates]);
 
+  const sceneDurationOverrides = useMemo(() => {
+    if (!scenePackResult) {
+      return {};
+    }
+
+    return scenePackResult.scenes.reduce<Record<number, number>>((acc, scene) => {
+      const rawValue = sceneDurationOverrideInputs[scene.index];
+      if (!rawValue || !rawValue.trim()) {
+        return acc;
+      }
+
+      const parsed = Number(rawValue);
+      const normalized = normalizeSceneDurationOverrideSeconds(parsed);
+      if (normalized === undefined) {
+        return acc;
+      }
+
+      acc[scene.index] = normalized;
+      return acc;
+    }, {});
+  }, [scenePackResult, sceneDurationOverrideInputs]);
+
   useEffect(() => {
     if (narration.status !== "done") {
       return;
@@ -1192,6 +1232,7 @@ export default function Home() {
     return buildRenderProject({
       scenePackResult,
       sceneImages,
+      sceneDurationOverrides,
       narration,
       settings: {
         transitions: {
@@ -1215,6 +1256,7 @@ export default function Home() {
     scenePackResult,
     sceneImages,
     narration,
+    sceneDurationOverrides,
     motionEnabled,
     allowedMotionPresetIds,
     motionStrength,
@@ -1223,12 +1265,13 @@ export default function Home() {
     transitionDurationMs,
   ]);
   const assignedMotionCount = renderProject.scenes.filter((scene) => scene.motionPreset).length;
+  const sceneOverrideCount = Object.keys(sceneDurationOverrides).length;
   const durationDeltaSeconds =
     typeof activeNarrationAsset?.duration === "number" &&
     typeof result?.totalEstimatedDurationSeconds === "number"
       ? activeNarrationAsset.duration - result.totalEstimatedDurationSeconds
       : undefined;
-  const isRenderBusy = renderStatus === "loading";
+  const isRenderBusy = renderStatus === "rendering";
 
   async function handleRenderVideo() {
     if (isRenderBusy) {
@@ -1278,7 +1321,7 @@ export default function Home() {
           transitionDurationMs: scene.transitionDurationMs || 0,
         })),
     );
-    setRenderStatus("loading");
+    setRenderStatus("rendering");
     setRenderError(null);
     setRenderResult(null);
 
@@ -1293,7 +1336,7 @@ export default function Home() {
       });
     } catch {
       setRenderStatus("error");
-      setRenderError("Could not reach the local render route.");
+      setRenderError("Video render failed. Please try again.");
       return;
     }
 
@@ -1303,9 +1346,8 @@ export default function Home() {
       | null;
 
     if (!response.ok || !payload || !payload.success) {
-      const errorPayload = payload as RenderPrototypeErrorResponse | null;
       setRenderStatus("error");
-      setRenderError(errorPayload?.message || "Rendering failed.");
+      setRenderError("Video render failed. Please try again.");
       return;
     }
 
@@ -1348,6 +1390,7 @@ export default function Home() {
     }
 
     clearAllSceneImages();
+    clearSceneDurationOverrides();
     clearNarrationAsset();
     setRenderStatus("idle");
     setRenderResult(null);
@@ -1371,6 +1414,24 @@ export default function Home() {
         return current.filter((candidate) => candidate !== presetId);
       }
       return [...current, presetId];
+    });
+  }
+
+  function updateSceneDurationOverride(sceneIndex: number, value: string) {
+    setSceneDurationOverrideInputs((current) => {
+      if (!value.trim()) {
+        if (!(sceneIndex in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[sceneIndex];
+        return next;
+      }
+
+      return {
+        ...current,
+        [sceneIndex]: value,
+      };
     });
   }
 
@@ -1570,12 +1631,31 @@ export default function Home() {
           ) : null}
           {scenePackResult && scenePackResult.scenes.length > 0 ? (
             <ol className={styles.storyboardStrip}>
-              {scenePackResult.scenes.map((scene) => (
+              {scenePackResult.scenes.map((scene) => {
+                const sceneDurationOverride = sceneDurationOverrides[scene.index];
+                const displayedSceneDuration = sceneDurationOverride ?? scene.estimatedDurationSeconds;
+
+                return (
                 <li key={scene.index} className={styles.storyboardCard}>
                   <div className={styles.cardHeader}>
                     <p className={styles.cardTitle}>Scene {scene.index}</p>
-                    <p className={styles.cardMeta}>{formatSeconds(scene.estimatedDurationSeconds)}</p>
+                    <p className={styles.cardMeta}>
+                      Duration: {formatSeconds(displayedSceneDuration)} ({sceneDurationOverride ? "manual" : "auto"})
+                    </p>
                   </div>
+                  <label className={styles.sceneDurationControl}>
+                    <span className={styles.fieldLabel}>Duration Override (seconds)</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      step="0.5"
+                      className={styles.sceneDurationInput}
+                      placeholder="Auto"
+                      value={sceneDurationOverrideInputs[scene.index] || ""}
+                      onChange={(event) => updateSceneDurationOverride(scene.index, event.target.value)}
+                    />
+                  </label>
                   <div
                     className={`${styles.imagePlaceholder} ${
                       activeDropSceneIndex === scene.index ? styles.imagePlaceholderActive : ""
@@ -1710,7 +1790,7 @@ export default function Home() {
                     ) : null}
                   </details>
                 </li>
-              ))}
+              )})}
             </ol>
           ) : (
             <div className={styles.emptyState}>Split script and build scenes to review storyboard cards.</div>
@@ -2128,6 +2208,7 @@ export default function Home() {
               <div className={styles.summaryItem}>
                 Transitions: {transitionsEnabled ? "enabled" : "disabled"} · {transitionDurationMs} ms
               </div>
+              <div className={styles.summaryItem}>Duration Overrides: {sceneOverrideCount}</div>
               <div className={styles.summaryItem}>
                 Scale Factor: {typeof renderProject.scaleFactor === "number" ? renderProject.scaleFactor.toFixed(3) : "—"}
               </div>
@@ -2158,7 +2239,7 @@ export default function Home() {
                 }}
                 disabled={!renderProject.isReady || isRenderBusy}
               >
-                {isRenderBusy ? "Rendering..." : "Render Video"}
+                {isRenderBusy ? "Rendering video..." : "Render Video"}
               </button>
               <button
                 type="button"
@@ -2171,6 +2252,12 @@ export default function Home() {
                 {isClearingGenerated ? "Clearing..." : "Clear generated files"}
               </button>
             </div>
+            {renderStatus === "rendering" ? (
+              <div className={styles.renderProgress}>
+                <span className={styles.spinner} aria-hidden="true" />
+                <span className={styles.info}>Rendering video...</span>
+              </div>
+            ) : null}
             {renderStatus === "success" && renderResult ? (
               <div className={styles.summaryGrid}>
                 <div className={styles.summaryItem}>File: {renderResult.fileName}</div>

@@ -28,6 +28,7 @@ export type RenderProjectSceneImageInput = {
 export type RenderProjectAppState = {
   scenePackResult: ScenePackResult | null;
   sceneImages: Record<number, RenderProjectSceneImageInput | undefined>;
+  sceneDurationOverrides?: Record<number, number | undefined>;
   narration: NarrationState;
   settings?: Partial<RenderSettings>;
   timingStrategy?: "estimated" | "scale-to-narration" | "auto";
@@ -438,11 +439,12 @@ export function validateRenderProject(
 
 export function buildRenderProject(appState: RenderProjectAppState): RenderProject {
   const estimatedScenes = (appState.scenePackResult?.scenes || []).map((scene, index) => ({
+    durationOverrideSeconds: appState.sceneDurationOverrides?.[scene.index],
     id: String(scene.index),
     order: index + 1,
     text: scene.text,
     estimatedDuration: scene.estimatedDurationSeconds,
-    finalDuration: scene.estimatedDurationSeconds,
+    finalDuration: appState.sceneDurationOverrides?.[scene.index] ?? scene.estimatedDurationSeconds,
     image: normalizeSceneImage(appState.sceneImages[scene.index]),
   }));
 
@@ -494,7 +496,10 @@ export function buildRenderProject(appState: RenderProjectAppState): RenderProje
     scaleFactor !== undefined
       ? estimatedScenes.map((scene) => ({
           ...scene,
-          finalDuration: scene.estimatedDuration * scaleFactor,
+          finalDuration:
+            scene.durationOverrideSeconds !== undefined
+              ? scene.durationOverrideSeconds
+              : scene.estimatedDuration * scaleFactor,
         }))
       : estimatedScenes;
 

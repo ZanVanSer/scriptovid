@@ -201,6 +201,22 @@
   color: #57534e;
 }
 
+.sceneDurationControl {
+  display: grid;
+  gap: 6px;
+}
+
+.sceneDurationInput {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #d6d3d1;
+  border-radius: 8px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: #292524;
+  background: #ffffff;
+}
+
 .imagePlaceholder {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -403,6 +419,21 @@
   gap: 8px;
 }
 
+.renderProgress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #d6d3d1;
+  border-top-color: #44403c;
+  border-radius: 999px;
+  animation: spin 0.9s linear infinite;
+}
+
 .motionSection {
   border: 1px solid #e7e5e4;
   border-radius: 8px;
@@ -513,6 +544,12 @@
   padding: 10px;
   display: grid;
   gap: 4px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 700px) {
