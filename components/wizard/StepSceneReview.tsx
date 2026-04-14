@@ -7,13 +7,15 @@ import styles from "@/app/page.module.css";
 interface StepSceneReviewProps {
   state: WizardState;
   actions: WizardActions;
+  onNext: () => void;
+  onBack: () => void;
 }
 
-export function StepSceneReview({ state, actions }: StepSceneReviewProps) {
+export function StepSceneReview({ state, actions, onNext, onBack }: StepSceneReviewProps) {
   return (
     <section className={styles.panel}>
       <div className={styles.sectionRow}>
-        <p className={styles.sectionTitle}>2. Scene review setup</p>
+        <p className={styles.sectionTitle}>Scene setup</p>
       </div>
       <div className={styles.summaryGrid}>
         <div className={styles.summaryItem}>Sentences: {state.result?.sentenceCount ?? 0}</div>
@@ -106,6 +108,9 @@ export function StepSceneReview({ state, actions }: StepSceneReviewProps) {
         </label>
       </div>
       <div className={styles.actions}>
+        <button type="button" className={styles.button} onClick={onBack}>
+          Back
+        </button>
         <button
           type="button"
           className={styles.buttonPrimary}
@@ -114,6 +119,11 @@ export function StepSceneReview({ state, actions }: StepSceneReviewProps) {
         >
           Build storyboard scenes
         </button>
+        {state.scenePackResult && (
+          <button type="button" className={styles.buttonPrimary} onClick={onNext}>
+            Next: Storyboard
+          </button>
+        )}
       </div>
       {state.scenePackError ? <p className={styles.error}>{state.scenePackError}</p> : null}
     </section>
