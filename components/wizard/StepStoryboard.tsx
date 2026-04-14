@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { VISUAL_STYLE_PRESETS, buildSceneImagePrompt } from "@/modules/image-generation/prompt-builder";
+import { buildSceneImagePrompt } from "@/modules/image-generation/prompt-builder";
 import { formatSeconds } from "@/types/api-responses";
 
 import type { WizardState, WizardActions } from "./types";
@@ -9,9 +9,11 @@ import styles from "@/app/page.module.css";
 interface StepStoryboardProps {
   state: WizardState;
   actions: WizardActions;
+  onNext: () => void;
+  onBack: () => void;
 }
 
-export function StepStoryboard({ state, actions }: StepStoryboardProps) {
+export function StepStoryboard({ state, actions, onNext, onBack }: StepStoryboardProps) {
   const scenePrompts = useMemo(() => {
     if (!state.scenePackResult) {
       return {};
@@ -68,7 +70,7 @@ export function StepStoryboard({ state, actions }: StepStoryboardProps) {
   return (
     <section className={styles.panel}>
       <div className={styles.sectionRow}>
-        <p className={styles.sectionTitle}>3. Storyboard review</p>
+        <p className={styles.sectionTitle}>Storyboard</p>
         <span className={styles.count}>Scenes: {state.scenePackResult?.totalSceneCount ?? 0}</span>
       </div>
       <div className={styles.summaryGrid}>
@@ -83,40 +85,42 @@ export function StepStoryboard({ state, actions }: StepStoryboardProps) {
           </>
         ) : null}
       </div>
-      {state.imageSourceMode === "nanobanana" ? (
-        <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.buttonPrimary}
-            onClick={() => actions.runBatchGeneration("generate-all")}
-            disabled={!state.scenePackResult || state.scenePackResult.scenes.length === 0 || state.isBatchGenerating}
-          >
-            Generate all images
-          </button>
-          <button
-            type="button"
-            className={styles.button}
-            onClick={() => actions.runBatchGeneration("regenerate-all")}
-            disabled={!state.scenePackResult || state.scenePackResult.scenes.length === 0 || state.isBatchGenerating}
-          >
-            Regenerate all images
-          </button>
-          <button
-            type="button"
-            className={styles.button}
-            onClick={() => actions.runBatchGeneration("regenerate-failed")}
-            disabled={!state.scenePackResult || state.scenePackResult.scenes.length === 0 || state.isBatchGenerating}
-          >
-            Regenerate failed images
-          </button>
-          {state.isBatchGenerating && state.batchProgress ? (
-            <p className={styles.modeNote}>
-              Running {formatBatchMode(state.batchProgress.mode)}: {state.batchProgress.completed}/{state.batchProgress.total}
-            </p>
-          ) : null}
-        </div>
+      <div className={styles.actions}>
+        <button type="button" className={styles.button} onClick={onBack}>
+          Back
+        </button>
+        {state.imageSourceMode === "nanobanana" ? (
+          <>
+            <button
+              type="button"
+              className={styles.buttonPrimary}
+              onClick={() => actions.runBatchGeneration("generate-all")}
+              disabled={!state.scenePackResult || state.scenePackResult.scenes.length === 0 || state.isBatchGenerating}
+            >
+              Generate all images
+            </button>
+            <button
+              type="button"
+              className={styles.button}
+              onClick={() => actions.runBatchGeneration("regenerate-all")}
+              disabled={!state.scenePackResult || state.scenePackResult.scenes.length === 0 || state.isBatchGenerating}
+            >
+              Regenerate all
+            </button>
+          </>
+        ) : null}
+        <button type="button" className={styles.buttonPrimary} onClick={onNext}>
+          Next: Narration
+        </button>
+      </div>
+      
+      {state.isBatchGenerating && state.batchProgress ? (
+        <p className={styles.info}>
+          Running {formatBatchMode(state.batchProgress.mode)}: {state.batchProgress.completed}/{state.batchProgress.total}
+        </p>
       ) : null}
-          {state.scenePackResult && state.scenePackResult.scenes.length > 0 ? (
+
+      {state.scenePackResult && state.scenePackResult.scenes.length > 0 ? (
         <ol className={styles.storyboardStrip}>
           {state.scenePackResult.scenes.map((scene) => {
             const rawDurationOverride = state.sceneDurationOverrideInputs[scene.index];
@@ -129,62 +133,29 @@ export function StepStoryboard({ state, actions }: StepStoryboardProps) {
                 <div className={styles.cardHeader}>
                   <p className={styles.cardTitle}>Scene {scene.index}</p>
                   <p className={styles.cardMeta}>
-                    Duration: {formatSeconds(displayedSceneDuration)} ({sceneDurationOverride !== undefined ? "manual" : "auto"})
+                    {formatSeconds(displayedSceneDuration)}
                   </p>
                 </div>
-                <label className={styles.sceneDurationControl}>
-                  <span className={styles.fieldLabel}>Duration Override (seconds)</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    step="0.5"
-                    className={styles.sceneDurationInput}
-                    placeholder="Auto"
-                    value={state.sceneDurationOverrideInputs[scene.index] || ""}
-                    onChange={(event) => actions.updateSceneDurationOverride(scene.index, event.target.value)}
-                  />
-                </label>
+                
                 <div
                   className={`${styles.imagePlaceholder} ${
                     state.activeDropSceneIndex === scene.index ? styles.imagePlaceholderActive : ""
-                  } ${styles.imagePlaceholderClickable}`}
+                  }`}
                   onClick={() => actions.openSceneFilePicker(scene.index)}
-                  onDragEnter={(event) => {
-                    event.preventDefault();
-                    actions.setActiveDropSceneIndex(scene.index);
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    actions.setActiveDropSceneIndex(scene.index);
-                  }}
-                  onDragLeave={(event) => {
-                    event.preventDefault();
-                    if (state.activeDropSceneIndex === scene.index) {
-                      actions.setActiveDropSceneIndex(null);
-                    }
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    actions.setActiveDropSceneIndex(null);
-                    const file = event.dataTransfer.files.item(0);
-                    if (file) {
-                      void actions.applySceneImageFile(scene.index, file);
-                    }
-                  }}
                 >
                   {state.sceneImages[scene.index] ? (
                     <img
                       src={state.sceneImages[scene.index].objectUrl}
-                      alt={`Scene ${scene.index} uploaded preview`}
+                      alt={`Scene ${scene.index}`}
                       className={styles.sceneImage}
                     />
                   ) : (
                     <p className={styles.placeholderText}>
-                      {state.imageSourceMode === "manual" ? "Image placeholder" : "Generated image placeholder"}
+                      {state.imageSourceMode === "manual" ? "Click to upload" : "Click to generate/upload"}
                     </p>
                   )}
                 </div>
+
                 <input
                   id={`scene-upload-${scene.index}`}
                   type="file"
@@ -198,73 +169,55 @@ export function StepStoryboard({ state, actions }: StepStoryboardProps) {
                     event.target.value = "";
                   }}
                 />
-                {state.imageSourceMode === "nanobanana" ? (
-                  <div className={styles.cardActions}>
+
+                <p className={styles.scenePreview}>{scene.text}</p>
+                
+                <div className={styles.statusRow}>
+                  <span
+                    className={`${styles.statusPill} ${
+                      generationState.status === "done"
+                        ? styles.statusDone
+                        : generationState.status === "error"
+                          ? styles.statusError
+                          : generationState.status === "loading"
+                            ? styles.statusLoading
+                            : styles.statusIdle
+                    }`}
+                  >
+                    {generationState.status}
+                  </span>
+                  
+                  {state.imageSourceMode === "nanobanana" && (
                     <button
                       type="button"
                       className={styles.smallButton}
                       disabled={generationState.status === "loading" || state.isBatchGenerating}
-                      onClick={() => actions.generateSceneImage(scene.index, scenePrompts[scene.index] || scene.text)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        actions.generateSceneImage(scene.index, scenePrompts[scene.index] || scene.text);
+                      }}
                     >
                       {getPerSceneGenerateLabel(scene.index)}
                     </button>
-                    <p className={styles.modeNote}>Uses selected style + model for this scene.</p>
-                  </div>
-                ) : null}
-                <div className={styles.cardActions}>
-                  <label htmlFor={`scene-upload-${scene.index}`} className={styles.smallButton}>
-                    {state.sceneImages[scene.index] ? "Replace" : "Upload"}
-                  </label>
-                  {state.sceneImages[scene.index] ? (
-                    <button
-                      type="button"
-                      className={styles.smallButton}
-                      onClick={() => actions.removeSceneImage(scene.index)}
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                  {state.imageSourceMode === "nanobanana" ? (
-                    <p className={styles.modeNote}>Manual upload can override generated result.</p>
-                  ) : null}
+                  )}
                 </div>
-                {state.sceneImages[scene.index] ? (
-                  <p className={styles.fileMeta}>{state.sceneImages[scene.index].label}</p>
-                ) : null}
-                {state.imageSourceMode === "nanobanana" ? (
-                  <div className={styles.statusRow}>
-                    <span
-                      className={`${styles.statusPill} ${
-                        generationState.status === "done"
-                          ? styles.statusDone
-                          : generationState.status === "error"
-                            ? styles.statusError
-                            : generationState.status === "loading"
-                              ? styles.statusLoading
-                              : styles.statusIdle
-                      }`}
-                    >
-                      {generationState.status}
-                    </span>
-                    <span className={styles.fileMeta}>
-                      {generationState.usedModel ? `Model: ${generationState.usedModel}` : `Model: ${state.nanobananaModel}`}
-                    </span>
-                  </div>
-                ) : null}
-                {state.sceneImageErrors[scene.index] ? (
-                  <p className={styles.inlineError}>{state.sceneImageErrors[scene.index]}</p>
-                ) : null}
-                <p className={styles.scenePreview}>{scene.text}</p>
+
                 <details className={styles.promptDetails}>
-                  <summary className={styles.promptSummary}>Prompt preview</summary>
-                  <p className={styles.promptSource}>Scene text: {scene.text}</p>
+                  <summary className={styles.promptSummary}>Settings & Prompt</summary>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Duration (s)</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      step="0.5"
+                      className={styles.numberInput}
+                      placeholder="Auto"
+                      value={state.sceneDurationOverrideInputs[scene.index] || ""}
+                      onChange={(event) => actions.updateSceneDurationOverride(scene.index, event.target.value)}
+                    />
+                  </label>
                   <p className={styles.promptText}>{scenePrompts[scene.index] || "Prompt unavailable."}</p>
-                  {generationState.usedPrompt ? (
-                    <p className={styles.promptSource}>Last generated prompt: {generationState.usedPrompt}</p>
-                  ) : null}
-                  {generationState.errorMessage ? (
-                    <p className={styles.promptSource}>Last error: {generationState.errorMessage}</p>
-                  ) : null}
                 </details>
               </li>
             );
