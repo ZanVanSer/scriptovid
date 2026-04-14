@@ -38,6 +38,10 @@ export const MOTION_PRESETS: MotionPreset[] = [
     id: "drift-right-zoom-in",
     name: "Drift Right + Zoom In",
   },
+  {
+    id: "zoom-pan",
+    name: "Zoom Pan",
+  },
 ];
 
 export const MOTION_PRESET_IDS: MotionPresetId[] = MOTION_PRESETS.map((preset) => preset.id);

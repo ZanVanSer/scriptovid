@@ -8,6 +8,7 @@ import type {
   RenderProject,
   RenderScene,
 } from "@/types/render-project";
+import { normalizeMotionStrength } from "@/types/render-project";
 import { resolveSceneMotionPreset } from "@/remotion/lib/motionPresets";
 
 import type { RemotionRenderProps } from "@/remotion/VideoComposition";
@@ -16,6 +17,18 @@ const OUTPUT_DIRECTORY = path.join(/* turbopackIgnore: true */ process.cwd(), "p
 const REMOTION_ENTRY = path.join(/* turbopackIgnore: true */ process.cwd(), "remotion", "Root.tsx");
 const REMOTION_RENDER_PROJECT_COMPOSITION_ID = "remotion-render-project";
 const PUBLIC_DIRECTORY = path.join(/* turbopackIgnore: true */ process.cwd(), "public");
+
+export class RenderPipelineError extends Error {
+  readonly stage: "validation" | "media-resolution" | "remotion-render";
+  readonly errorCode: string;
+
+  constructor(stage: "validation" | "media-resolution" | "remotion-render", errorCode: string, message: string) {
+    super(message);
+    this.name = "RenderPipelineError";
+    this.stage = stage;
+    this.errorCode = errorCode;
+  }
+}
 
 function createRemotionRenderFileName() {
   const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
@@ -69,12 +82,25 @@ async function localFileToDataUrl(filePath: string, explicitMimeType?: string) {
   return `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
 }
 
+function filePathToPublicUrl(filePath: string) {
+  const normalizedPath = path.normalize(filePath);
+  const relativeToPublic = path.relative(PUBLIC_DIRECTORY, normalizedPath);
+  if (relativeToPublic && !relativeToPublic.startsWith("..") && !path.isAbsolute(relativeToPublic)) {
+    return `/${relativeToPublic.replace(/\\/g, "/")}`;
+  }
+  return undefined;
+}
+
 async function resolveSceneImageUrl(scene: RenderScene) {
   const mediaRef = scene.image.mediaRef;
   if (mediaRef.kind === "url") {
     const normalizedUrl = mediaRef.value.trim();
     if (!normalizedUrl) {
-      throw new Error(`Scene ${scene.order} image URL is empty.`);
+      throw new RenderPipelineError(
+        "media-resolution",
+        "SCENE_IMAGE_URL_EMPTY",
+        `Scene ${scene.order} image mediaRef(kind=url) is empty.`,
+      );
     }
     if (normalizedUrl.startsWith("data:image/")) {
       return normalizedUrl;
@@ -84,13 +110,53 @@ async function resolveSceneImageUrl(scene: RenderScene) {
     }
     if (normalizedUrl.startsWith("/")) {
       const publicFilePath = path.join(PUBLIC_DIRECTORY, normalizedUrl.slice(1));
-      return localFileToDataUrl(publicFilePath);
+      try {
+        return await localFileToDataUrl(publicFilePath);
+      } catch (error) {
+        throw new RenderPipelineError(
+          "media-resolution",
+          "SCENE_IMAGE_PUBLIC_FILE_READ_FAILED",
+          `Scene ${scene.order} image mediaRef(kind=url) could not be read from "${normalizedUrl}": ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        );
+      }
     }
-    throw new Error(`Scene ${scene.order} image URL must be absolute (/, http://, or https://).`);
+    throw new RenderPipelineError(
+      "media-resolution",
+      "SCENE_IMAGE_URL_INVALID",
+      `Scene ${scene.order} image mediaRef(kind=url) must be data:image, /public URL, http://, or https://.`,
+    );
   }
 
   const normalizedFilePath = path.normalize(mediaRef.value);
-  return localFileToDataUrl(normalizedFilePath);
+  try {
+    return await localFileToDataUrl(normalizedFilePath);
+  } catch (error) {
+    const fallbackPublicUrl = filePathToPublicUrl(normalizedFilePath);
+    if (fallbackPublicUrl) {
+      const fallbackPublicFilePath = path.join(PUBLIC_DIRECTORY, fallbackPublicUrl.slice(1));
+      try {
+        return await localFileToDataUrl(fallbackPublicFilePath);
+      } catch (fallbackError) {
+        throw new RenderPipelineError(
+          "media-resolution",
+          "SCENE_IMAGE_FILE_PATH_READ_FAILED",
+          `Scene ${scene.order} image mediaRef(kind=file-path) failed at "${normalizedFilePath}" and fallback "${fallbackPublicUrl}": ${
+            fallbackError instanceof Error ? fallbackError.message : "unknown error"
+          }`,
+        );
+      }
+    }
+
+    throw new RenderPipelineError(
+      "media-resolution",
+      "SCENE_IMAGE_FILE_PATH_READ_FAILED",
+      `Scene ${scene.order} image mediaRef(kind=file-path) could not be read from "${normalizedFilePath}": ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    );
+  }
 }
 
 async function resolveNarrationAudioUrl(narration: RenderNarration) {
@@ -98,7 +164,11 @@ async function resolveNarrationAudioUrl(narration: RenderNarration) {
   if (mediaRef.kind === "url") {
     const normalizedUrl = mediaRef.value.trim();
     if (!normalizedUrl) {
-      throw new Error("Narration URL is empty.");
+      throw new RenderPipelineError(
+        "media-resolution",
+        "NARRATION_URL_EMPTY",
+        "Narration mediaRef(kind=url) is empty.",
+      );
     }
     if (normalizedUrl.startsWith("data:audio/")) {
       return normalizedUrl;
@@ -108,13 +178,53 @@ async function resolveNarrationAudioUrl(narration: RenderNarration) {
     }
     if (normalizedUrl.startsWith("/")) {
       const publicFilePath = path.join(PUBLIC_DIRECTORY, normalizedUrl.slice(1));
-      return localFileToDataUrl(publicFilePath, narration.mimeType);
+      try {
+        return await localFileToDataUrl(publicFilePath, narration.mimeType);
+      } catch (error) {
+        throw new RenderPipelineError(
+          "media-resolution",
+          "NARRATION_PUBLIC_FILE_READ_FAILED",
+          `Narration mediaRef(kind=url) could not be read from "${normalizedUrl}": ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        );
+      }
     }
-    throw new Error("Narration URL must be absolute (/, http://, or https://).");
+    throw new RenderPipelineError(
+      "media-resolution",
+      "NARRATION_URL_INVALID",
+      "Narration mediaRef(kind=url) must be data:audio, /public URL, http://, or https://.",
+    );
   }
 
   const normalizedFilePath = path.normalize(mediaRef.value);
-  return localFileToDataUrl(normalizedFilePath, narration.mimeType);
+  try {
+    return await localFileToDataUrl(normalizedFilePath, narration.mimeType);
+  } catch (error) {
+    const fallbackPublicUrl = filePathToPublicUrl(normalizedFilePath);
+    if (fallbackPublicUrl) {
+      const fallbackPublicFilePath = path.join(PUBLIC_DIRECTORY, fallbackPublicUrl.slice(1));
+      try {
+        return await localFileToDataUrl(fallbackPublicFilePath, narration.mimeType);
+      } catch (fallbackError) {
+        throw new RenderPipelineError(
+          "media-resolution",
+          "NARRATION_FILE_PATH_READ_FAILED",
+          `Narration mediaRef(kind=file-path) failed at "${normalizedFilePath}" and fallback "${fallbackPublicUrl}": ${
+            fallbackError instanceof Error ? fallbackError.message : "unknown error"
+          }`,
+        );
+      }
+    }
+
+    throw new RenderPipelineError(
+      "media-resolution",
+      "NARRATION_FILE_PATH_READ_FAILED",
+      `Narration mediaRef(kind=file-path) could not be read from "${normalizedFilePath}": ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    );
+  }
 }
 
 async function resolveBackgroundMusicAudioUrl(backgroundMusic: RenderBackgroundMusic) {
@@ -222,7 +332,7 @@ export async function convertRenderProjectToRemotionProps(
     width,
     height,
     fps,
-    motionStrength: renderProject.settings.motion.strength,
+    motionStrength: normalizeMotionStrength(renderProject.settings.motion.strength),
     transitions: {
       enabled: renderProject.settings.transitions.enabled,
       durationMs: renderProject.settings.transitions.durationMs,
@@ -249,17 +359,48 @@ export async function renderVideoWithRemotion(
   renderProject: RenderProject,
   outputPath?: string,
 ): Promise<RemotionRenderSuccessResult> {
-  const [{ bundle }, { renderMedia, selectComposition }] = await Promise.all([
-    import("@remotion/bundler"),
-    import("@remotion/renderer"),
-  ]);
+  let bundle: typeof import("@remotion/bundler").bundle;
+  let renderMedia: typeof import("@remotion/renderer").renderMedia;
+  let selectComposition: typeof import("@remotion/renderer").selectComposition;
+  try {
+    const [bundler, renderer] = await Promise.all([
+      import("@remotion/bundler"),
+      import("@remotion/renderer"),
+    ]);
+    bundle = bundler.bundle;
+    renderMedia = renderer.renderMedia;
+    selectComposition = renderer.selectComposition;
+  } catch (error) {
+    throw new RenderPipelineError(
+      "remotion-render",
+      "REMOTION_MODULE_LOAD_FAILED",
+      `Failed to load Remotion modules: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 
   const validatedProject = validateRenderProject(renderProject);
   if (!validatedProject.isReady) {
-    throw new Error("Render project is not ready.");
+    const firstError = validatedProject.issues.find((issue) => issue.level === "error");
+    throw new RenderPipelineError(
+      "validation",
+      firstError?.code || "RENDER_PROJECT_NOT_READY",
+      firstError?.message || "Render project is not ready.",
+    );
   }
 
-  const remotionProps = await convertRenderProjectToRemotionProps(validatedProject);
+  let remotionProps: RemotionRenderProps;
+  try {
+    remotionProps = await convertRenderProjectToRemotionProps(validatedProject);
+  } catch (error) {
+    if (error instanceof RenderPipelineError) {
+      throw error;
+    }
+    throw new RenderPipelineError(
+      "media-resolution",
+      "REMOTION_PROPS_BUILD_FAILED",
+      `Failed to prepare render media: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 
   await mkdir(OUTPUT_DIRECTORY, { recursive: true });
 
@@ -267,24 +408,60 @@ export async function renderVideoWithRemotion(
   const resolvedOutputPath = outputPath || path.join(OUTPUT_DIRECTORY, fileName);
   const outputUrl = `/generated/renders/${path.basename(resolvedOutputPath)}`;
 
-  const bundledServeUrl = await bundle({
-    entryPoint: REMOTION_ENTRY,
-    publicDir: PUBLIC_DIRECTORY,
-  });
+  let bundledServeUrl: string;
+  try {
+    bundledServeUrl = await bundle({
+      entryPoint: REMOTION_ENTRY,
+      publicDir: PUBLIC_DIRECTORY,
+      webpackOverride: (webpackConfig) => ({
+        ...webpackConfig,
+        resolve: {
+          ...webpackConfig.resolve,
+          alias: {
+            ...webpackConfig.resolve?.alias,
+            "@": path.resolve(process.cwd()),
+          },
+        },
+      }),
+    });
+  } catch (error) {
+    throw new RenderPipelineError(
+      "remotion-render",
+      "REMOTION_BUNDLE_FAILED",
+      `Failed to bundle Remotion composition: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 
-  const composition = await selectComposition({
-    serveUrl: bundledServeUrl,
-    id: REMOTION_RENDER_PROJECT_COMPOSITION_ID,
-    inputProps: remotionProps,
-  });
+  let composition: Awaited<ReturnType<typeof selectComposition>>;
+  try {
+    composition = await selectComposition({
+      serveUrl: bundledServeUrl,
+      id: REMOTION_RENDER_PROJECT_COMPOSITION_ID,
+      inputProps: remotionProps,
+    });
+  } catch (error) {
+    throw new RenderPipelineError(
+      "remotion-render",
+      "REMOTION_COMPOSITION_SELECT_FAILED",
+      `Failed to select Remotion composition: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 
-  await renderMedia({
-    serveUrl: bundledServeUrl,
-    composition,
-    codec: "h264",
-    outputLocation: resolvedOutputPath,
-    inputProps: remotionProps,
-  });
+  try {
+    await renderMedia({
+      serveUrl: bundledServeUrl,
+      composition,
+      codec: "h264",
+      outputLocation: resolvedOutputPath,
+      inputProps: remotionProps,
+    });
+  } catch (error) {
+    throw new RenderPipelineError(
+      "remotion-render",
+      "REMOTION_RENDER_FAILED",
+      `Failed during Remotion render: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 
   const outputStats = await stat(resolvedOutputPath);
 

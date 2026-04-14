@@ -1,7 +1,12 @@
 import { MOTION_PRESETS } from "@/lib/motion/motionPresets";
 import { CINEMATIC_TRANSITION_OPTIONS, TRANSITION_DURATION_OPTIONS_MS } from "@/lib/render/transition-types";
 import { buildRenderProject } from "@/modules/video-renderer/render-project";
-import { formatDurationClock, formatFileSize, normalizeSceneDurationOverrideSeconds } from "@/types/api-responses";
+import { formatDurationClock, normalizeSceneDurationOverrideSeconds } from "@/types/api-responses";
+import {
+  MOTION_STRENGTH_MAX,
+  MOTION_STRENGTH_MIN,
+  normalizeMotionStrength,
+} from "@/types/render-project";
 
 import type { WizardState, WizardActions } from "./types";
 import styles from "@/app/page.module.css";
@@ -13,6 +18,8 @@ interface StepRenderProps {
 }
 
 export function StepRender({ state, actions, onBack }: StepRenderProps) {
+  const normalizedMotionStrength = normalizeMotionStrength(state.motionStrength);
+
   const sceneDurationOverrides = Object.entries(state.sceneDurationOverrideInputs).reduce<Record<number, number>>((acc, [key, value]) => {
     if (!value || !value.trim()) return acc;
     const parsed = Number(value);
@@ -40,7 +47,7 @@ export function StepRender({ state, actions, onBack }: StepRenderProps) {
       enabled: state.motionEnabled,
       allowedPresetIds: state.allowedMotionPresetIds,
       assignmentMode: "deterministic-by-scene-index",
-      strength: state.motionStrength,
+      strength: normalizedMotionStrength,
     },
   });
 
@@ -143,15 +150,17 @@ export function StepRender({ state, actions, onBack }: StepRenderProps) {
             </label>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Motion Strength</span>
-              <select
-                className={styles.selectInput}
-                value={state.motionStrength}
-                onChange={(e) => actions.setMotionStrength(e.target.value as any)}
-              >
-                <option value="weak">Weak</option>
-                <option value="medium">Medium</option>
-                <option value="strong">Strong</option>
-              </select>
+              <input
+                type="range"
+                min={MOTION_STRENGTH_MIN}
+                max={MOTION_STRENGTH_MAX}
+                step={0.1}
+                value={normalizedMotionStrength}
+                onChange={(e) => actions.setMotionStrength(Number(e.target.value))}
+              />
+              <span className={styles.info} style={{ margin: 0, padding: 0 }}>
+                {normalizedMotionStrength.toFixed(1)}x
+              </span>
             </label>
           </div>
 

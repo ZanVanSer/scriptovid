@@ -19,7 +19,7 @@ export type RemotionRenderProps = {
   width: number;
   height: number;
   fps: number;
-  motionStrength: "weak" | "medium" | "strong";
+  motionStrength: number;
   transitions: {
     enabled: boolean;
     durationMs: number;
@@ -42,7 +42,7 @@ export const DEFAULT_REMOTION_RENDER_PROPS: RemotionRenderProps = {
   width: 1280,
   height: 720,
   fps: 30,
-  motionStrength: "medium",
+  motionStrength: 1,
   transitions: {
     enabled: true,
     durationMs: 500,

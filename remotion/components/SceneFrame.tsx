@@ -10,7 +10,7 @@ type SceneFrameProps = {
   durationInFrames: number;
   frameOffsetFrames?: number;
   motionPreset?: RemotionMotionPresetName;
-  motionStrength: "weak" | "medium" | "strong";
+  motionStrength: number;
 };
 
 export function SceneFrame({

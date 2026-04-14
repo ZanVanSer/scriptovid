@@ -8,7 +8,9 @@ export type RemotionMotionPresetName =
   | "pan-up"
   | "pan-down"
   | "drift-left"
-  | "drift-right";
+  | "drift-right"
+  | "zoom-pan-left"
+  | "zoom-pan-right";
 
 export type RemotionMotionPreset = {
   name: RemotionMotionPresetName;
@@ -93,9 +95,34 @@ export const REMOTION_MOTION_PRESETS: Record<RemotionMotionPresetName, RemotionM
     startY: -0.01,
     endY: 0.01,
   },
+  "zoom-pan-left": {
+    name: "zoom-pan-left",
+    startScale: 1.08,
+    endScale: 1.24,
+    startX: 0.04,
+    endX: -0.04,
+    startY: -0.03,
+    endY: 0.03,
+  },
+  "zoom-pan-right": {
+    name: "zoom-pan-right",
+    startScale: 1.08,
+    endScale: 1.24,
+    startX: -0.04,
+    endX: 0.04,
+    startY: 0.03,
+    endY: -0.03,
+  },
 };
 
-function mapLegacyPresetIdToRemotionPreset(presetId?: MotionPresetId): RemotionMotionPresetName | undefined {
+function getZoomPanPresetBySceneIndex(sceneIndex: number) {
+  return sceneIndex % 2 === 0 ? "zoom-pan-left" : "zoom-pan-right";
+}
+
+function mapLegacyPresetIdToRemotionPreset(
+  presetId: MotionPresetId | undefined,
+  sceneIndex: number,
+): RemotionMotionPresetName | undefined {
   if (!presetId) {
     return undefined;
   }
@@ -117,14 +144,16 @@ function mapLegacyPresetIdToRemotionPreset(presetId?: MotionPresetId): RemotionM
       return "drift-left";
     case "drift-right-zoom-in":
       return "drift-right";
+    case "zoom-pan":
+      return getZoomPanPresetBySceneIndex(sceneIndex);
     default:
       return undefined;
   }
 }
 
-function mapAllowedLegacyPresetIds(allowedPresetIds: MotionPresetId[]) {
+function mapAllowedLegacyPresetIds(allowedPresetIds: MotionPresetId[], sceneIndex: number) {
   const mapped = allowedPresetIds
-    .map((presetId) => mapLegacyPresetIdToRemotionPreset(presetId))
+    .map((presetId) => mapLegacyPresetIdToRemotionPreset(presetId, sceneIndex))
     .filter((preset): preset is RemotionMotionPresetName => Boolean(preset));
 
   return [...new Set(mapped)];
@@ -139,17 +168,17 @@ export function resolveSceneMotionPreset(
     return undefined;
   }
 
-  const explicitPreset = mapLegacyPresetIdToRemotionPreset(scene.motionPreset);
+  const normalizedSceneIndex = Number.isFinite(sceneIndex) && sceneIndex >= 0 ? Math.floor(sceneIndex) : 0;
+  const explicitPreset = mapLegacyPresetIdToRemotionPreset(scene.motionPreset, normalizedSceneIndex);
   if (explicitPreset) {
     return explicitPreset;
   }
 
-  const allowedPresets = mapAllowedLegacyPresetIds(motionSettings.allowedPresetIds);
+  const allowedPresets = mapAllowedLegacyPresetIds(motionSettings.allowedPresetIds, normalizedSceneIndex);
   if (allowedPresets.length === 0) {
     return undefined;
   }
 
-  const normalizedSceneIndex = Number.isFinite(sceneIndex) && sceneIndex >= 0 ? Math.floor(sceneIndex) : 0;
   const presetIndex = normalizedSceneIndex % allowedPresets.length;
   return allowedPresets[presetIndex];
 }

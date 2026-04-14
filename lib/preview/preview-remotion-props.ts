@@ -1,4 +1,5 @@
 import type { RenderMediaRef, RenderProject } from "@/types/render-project";
+import { normalizeMotionStrength } from "@/types/render-project";
 import type { RemotionRenderProps } from "@/remotion/VideoComposition";
 import { resolveSceneMotionPreset } from "@/remotion/lib/motionPresets";
 
@@ -143,7 +144,7 @@ export function convertRenderProjectToPreviewRemotionProps(renderProject: Render
       width,
       height,
       fps,
-      motionStrength: renderProject.settings.motion.strength,
+      motionStrength: normalizeMotionStrength(renderProject.settings.motion.strength),
       transitions: {
         enabled: renderProject.settings.transitions.enabled,
         durationMs: renderProject.settings.transitions.durationMs,

@@ -11,7 +11,8 @@ export type MotionPresetId =
   | "pan-up-subtle"
   | "pan-down-subtle"
   | "drift-left-zoom-in"
-  | "drift-right-zoom-in";
+  | "drift-right-zoom-in"
+  | "zoom-pan";
 
 export type TransitionType =
   | "cut"
@@ -32,8 +33,35 @@ export type MotionSettings = {
   allowedPresetIds: MotionPresetId[];
   assignmentMode: "deterministic-by-scene-index";
   speed: 0.5 | 0.75 | 1;
-  strength: "weak" | "medium" | "strong";
+  strength: number;
 };
+
+export const MOTION_STRENGTH_MIN = 0.5;
+export const MOTION_STRENGTH_MAX = 5;
+export const MOTION_STRENGTH_DEFAULT = 1;
+
+export function normalizeMotionStrength(
+  value: unknown,
+  fallback: number = MOTION_STRENGTH_DEFAULT,
+): number {
+  let numericValue: number | undefined;
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    numericValue = value;
+  } else if (value === "weak") {
+    numericValue = 0.6;
+  } else if (value === "medium") {
+    numericValue = 1;
+  } else if (value === "strong") {
+    numericValue = 1.6;
+  }
+
+  if (numericValue === undefined) {
+    numericValue = fallback;
+  }
+
+  return Math.min(MOTION_STRENGTH_MAX, Math.max(MOTION_STRENGTH_MIN, numericValue));
+}
 
 export type RenderImageAsset = {
   source: "manual" | "generated";
@@ -131,9 +159,10 @@ export const DEFAULT_RENDER_SETTINGS: RenderSettings = {
       "pan-down-subtle",
       "drift-left-zoom-in",
       "drift-right-zoom-in",
+      "zoom-pan",
     ],
     assignmentMode: "deterministic-by-scene-index",
     speed: 0.75,
-    strength: "medium",
+    strength: MOTION_STRENGTH_DEFAULT,
   },
 };

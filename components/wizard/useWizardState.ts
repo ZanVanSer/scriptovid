@@ -37,7 +37,12 @@ import {
   type NarrationState,
 } from "@/types/narration";
 import { createDefaultMusicState, type MusicState } from "@/types/music";
-import type { MotionPresetId, MotionSettings, TransitionType } from "@/types/render-project";
+import {
+  MOTION_STRENGTH_DEFAULT,
+  type MotionPresetId,
+  type MotionSettings,
+  type TransitionType,
+} from "@/types/render-project";
 import type { ScenePackResult } from "@/types/scene";
 import type { SentenceSplitResponse } from "@/types/sentence";
 
@@ -134,7 +139,7 @@ export function useWizardState() {
   const [clearGeneratedMessage, setClearGeneratedMessage] = useState<string | null>(null);
   const [motionEnabled, setMotionEnabled] = useState(true);
   const [allowedMotionPresetIds, setAllowedMotionPresetIds] = useState<MotionPresetId[]>(MOTION_PRESET_IDS);
-  const [motionStrength, setMotionStrength] = useState<MotionSettings["strength"]>("medium");
+  const [motionStrength, setMotionStrength] = useState<MotionSettings["strength"]>(MOTION_STRENGTH_DEFAULT);
   const [transitionsEnabled, setTransitionsEnabled] = useState(true);
   const [allowedTransitionPresetIds, setAllowedTransitionPresetIds] = useState<TransitionType[]>(
     CINEMATIC_TRANSITION_PRESET_IDS,
@@ -1197,8 +1202,11 @@ export function useWizardState() {
       | null;
 
     if (!response.ok || !payload || !payload.success) {
+      const errorPayload = payload as RenderPrototypeErrorResponse | null;
+      const message = errorPayload?.message || "Video render failed. Please try again.";
+      const code = errorPayload?.errorCode;
       setRenderStatus("error");
-      setRenderError("Video render failed. Please try again.");
+      setRenderError(code ? `${message} [${code}]` : message);
       return;
     }
 

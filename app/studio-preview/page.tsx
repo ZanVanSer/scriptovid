@@ -8,6 +8,7 @@ import { convertRenderProjectToPreviewRemotionProps } from "@/lib/preview/previe
 import { readPreviewSnapshot, type PreviewSnapshot } from "@/lib/preview/preview-snapshot";
 import { VideoComposition } from "@/remotion/VideoComposition";
 import { timelinePlanner } from "@/remotion/lib/timeline-planner";
+import { normalizeMotionStrength } from "@/types/render-project";
 
 import styles from "./page.module.css";
 
@@ -24,6 +25,10 @@ function formatClock(seconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const remainingSeconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function formatMotionStrength(value: unknown) {
+  return `${normalizeMotionStrength(value).toFixed(1)}x`;
 }
 
 function readInitialPageState(): PageState {
@@ -154,7 +159,7 @@ export default function StudioPreviewPage() {
                   fps
                 </div>
                 <div className={styles.summaryItem}>
-                  Motion: {pageState.snapshot.renderProject.settings.motion.strength}
+                  Motion: {formatMotionStrength(pageState.snapshot.renderProject.settings.motion.strength)}
                 </div>
               </div>
 
