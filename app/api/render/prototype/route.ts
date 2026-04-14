@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { renderVideoWithRemotion } from "@/lib/render/remotionRenderer";
+import { RenderPipelineError, renderVideoWithRemotion } from "@/lib/render/remotionRenderer";
 import type { RenderProject } from "@/types/render-project";
 
 export const runtime = "nodejs";
@@ -61,6 +61,15 @@ export async function POST(request: Request) {
     const response: RenderPrototypeSuccessResult = result;
     return NextResponse.json(response);
   } catch (error) {
+    if (error instanceof RenderPipelineError) {
+      const response: RenderPrototypeErrorResult = {
+        success: false,
+        errorCode: error.errorCode,
+        message: `[${error.stage}] ${error.message}`,
+      };
+      return NextResponse.json(response, { status: 400 });
+    }
+
     const response: RenderPrototypeErrorResult = {
       success: false,
       errorCode: "REMOTION_RENDER_ERROR",

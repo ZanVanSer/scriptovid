@@ -8,7 +8,7 @@ type TransitionSceneLayerProps = {
   entry: SceneTimelineEntry;
   width: number;
   height: number;
-  motionStrength: "weak" | "medium" | "strong";
+  motionStrength: number;
 };
 
 export function TransitionSceneLayer({ entry, width, height, motionStrength }: TransitionSceneLayerProps) {

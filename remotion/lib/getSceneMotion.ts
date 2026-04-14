@@ -1,5 +1,11 @@
 import { Easing, interpolate } from "remotion";
 
+import {
+  MOTION_STRENGTH_DEFAULT,
+  MOTION_STRENGTH_MAX,
+  MOTION_STRENGTH_MIN,
+  normalizeMotionStrength,
+} from "@/types/render-project";
 import { REMOTION_MOTION_PRESETS, type RemotionMotionPresetName } from "./motionPresets";
 
 export type SceneMotionValues = {
@@ -7,12 +13,6 @@ export type SceneMotionValues = {
   translateX: number;
   translateY: number;
 };
-
-const STRENGTH_MULTIPLIER = {
-  weak: 0.6,
-  medium: 1,
-  strong: 1.6,
-} as const;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -29,7 +29,7 @@ export function getSceneMotion(
   durationInFrames: number,
   width: number,
   height: number,
-  motionStrength: "weak" | "medium" | "strong",
+  motionStrength: number,
 ): SceneMotionValues {
   if (!presetName) {
     return {
@@ -40,7 +40,7 @@ export function getSceneMotion(
   }
 
   const preset = REMOTION_MOTION_PRESETS[presetName];
-  const strengthMultiplier = STRENGTH_MULTIPLIER[motionStrength];
+  const strengthMultiplier = normalizeMotionStrength(motionStrength, MOTION_STRENGTH_DEFAULT);
   const progress = toProgress(frame, durationInFrames);
 
   const easedProgress = interpolate(progress, [0, 1], [0, 1], {
@@ -64,9 +64,11 @@ export function getSceneMotion(
     extrapolateRight: "clamp",
   }) * strengthMultiplier;
 
-  const safeScale = clamp(scale, 1.04, 1.32);
-  const safeX = clamp(normalizedX, -0.05, 0.05);
-  const safeY = clamp(normalizedY, -0.05, 0.05);
+  const maxScale = 1 + 0.5 * (strengthMultiplier / MOTION_STRENGTH_MAX);
+  const maxPan = 0.04 + 0.12 * ((strengthMultiplier - MOTION_STRENGTH_MIN) / (MOTION_STRENGTH_MAX - MOTION_STRENGTH_MIN));
+  const safeScale = clamp(scale, 1.02, maxScale);
+  const safeX = clamp(normalizedX, -maxPan, maxPan);
+  const safeY = clamp(normalizedY, -maxPan, maxPan);
 
   return {
     scale: safeScale,

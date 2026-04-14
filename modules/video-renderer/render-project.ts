@@ -4,6 +4,7 @@ import type { MusicState } from "@/types/music";
 import type { NarrationState } from "@/types/narration";
 import {
   DEFAULT_RENDER_SETTINGS,
+  normalizeMotionStrength,
   type MotionSettings,
   type RenderBackgroundMusic,
   type RenderImageAsset,
@@ -229,6 +230,14 @@ function getMediaRefRenderabilityStatus(mediaRef: RenderMediaRef): "ok" | "error
   return "error";
 }
 
+function describeMediaRef(mediaRef: RenderMediaRef) {
+  const kind = mediaRef.kind;
+  const trimmedValue = mediaRef.value.trim();
+  const shortValue =
+    trimmedValue.length > 96 ? `${trimmedValue.slice(0, 93)}...` : trimmedValue;
+  return `kind=${kind}, value="${shortValue}"`;
+}
+
 function createIssue(code: string, message: string, level: RenderValidationIssue["level"]): RenderValidationIssue {
   return { code, message, level };
 }
@@ -249,7 +258,7 @@ function resolveMotionSettings(appState: RenderProjectAppState): MotionSettings 
     allowedPresetIds: normalizedAllowedPresetIds,
     assignmentMode: "deterministic-by-scene-index",
     speed: mergedMotion.speed === 0.5 || mergedMotion.speed === 1 ? mergedMotion.speed : 0.75,
-    strength: mergedMotion.strength === "weak" || mergedMotion.strength === "strong" ? mergedMotion.strength : "medium",
+    strength: normalizeMotionStrength(mergedMotion.strength),
   };
 }
 
@@ -342,7 +351,7 @@ export function validateRenderProject(
         issues.push(
           createIssue(
             "MEDIA_NOT_RENDERABLE",
-            `Scene ${scene.order} image media reference is invalid for renderer input.`,
+            `Scene ${scene.order} image media reference is invalid for renderer input (${describeMediaRef(scene.image.mediaRef)}).`,
             "error",
           ),
         );
@@ -409,7 +418,7 @@ export function validateRenderProject(
         issues.push(
           createIssue(
             "MEDIA_NOT_RENDERABLE",
-            "Narration media reference is invalid for renderer input.",
+            `Narration media reference is invalid for renderer input (${describeMediaRef(renderProject.narration.mediaRef)}).`,
             "error",
           ),
         );
